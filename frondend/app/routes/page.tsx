@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +16,36 @@ import { useStore } from '@/lib/store';
 import KakaoMapPlaceholder from '@/components/ui/kakao-map-placeholder';
 
 export default function RoutesPage() {
+  const searchParams = useSearchParams();
+  const planId = searchParams.get('planId');
+
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!planId) {
+      setIsLoading(false);
+      setAnalysis("분석할 계획 ID가 전달되지 않았습니다. 계획 페이지에서 먼저 '최적화 실행'을 눌러주세요.");
+      return;
+    };
+
+    const fetchAnalysis = async () => {
+      setIsLoading(true);
+      try {
+        const response = await fetch(`http://127.0.0.1:5001/api/analyze-plan/${planId}`);
+        if (!response.ok) throw new Error('분석 서버 오류');
+        const data = await response.json();
+        setAnalysis(data.analysis);
+      } catch (error) {
+        console.error('분석 중 오류:', error);
+        setAnalysis('결과 분석 중 오류가 발생했습니다.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAnalysis();
+  }, [planId]);
   const { routes, kpis, vehicles } = useStore();
   const [showScenarioDialog, setShowScenarioDialog] = useState(false);
   const [scenarioSettings, setScenarioSettings] = useState({
@@ -178,33 +210,20 @@ export default function RoutesPage() {
 
           {/* LLM Explanation */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="w-5 h-5" />
-                결과 설명 (LLM)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  🤖 <strong>최적화 분석:</strong> 총 2대의 차량으로 3개 섹터를 효율적으로 배송합니다. 
-                  전기차(TRK01)를 우선 배치하여 CO₂ 배출량을 23.5% 절감했습니다.
-                </p>
-              </div>
-              <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-sm text-green-900">
-                  ⚡ <strong>친환경 효과:</strong> 기존 디젤 차량만 사용할 경우 대비 약 1.2kg의 CO₂를 절약합니다. 
-                  이는 소나무 약 0.5그루가 1년간 흡수하는 양과 같습니다.
-                </p>
-              </div>
-              <div className="bg-amber-50 p-4 rounded-lg">
-                <p className="text-sm text-amber-900">
-                  📈 <strong>최적화 포인트:</strong> 모든 시간창 제약을 만족하며, 
-                  차량별 용량 활용률은 평균 85%로 효율적입니다.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+  <CardHeader>
+    <CardTitle>결과 설명 (LLM)</CardTitle>
+  </CardHeader>
+  <CardContent>
+    {/* --- 💡 이 CardContent 안의 내용만 아래 코드로 바꿔주세요 💡 --- */}
+    {isLoading ? (
+      <p>LLM이 최적화 결과를 분석하고 있습니다...</p>
+    ) : analysis ? (
+      <div style={{ whiteSpace: 'pre-wrap' }}>{analysis}</div>
+    ) : (
+      <p>분석 결과를 불러오는 데 실패했습니다.</p>
+    )}
+  </CardContent>
+</Card>
 
           {/* Alternative Scenarios */}
           <div className="flex gap-3">

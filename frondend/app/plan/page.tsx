@@ -1,3 +1,4 @@
+// frontend/src/app/plan/page.tsx
 'use client';
 
 import { useState } from 'react';
@@ -5,24 +6,20 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MapPin, MessageSquare, FileText } from 'lucide-react';
-import { useStore } from '@/lib/store';
-import { OptimizationRequest } from '@/lib/types';
 import NaturalLanguageInput from '@/components/plan/natural-language-input';
 import FormInput from '@/components/plan/form-input';
 
+// DB에 저장된 Plan 데이터의 타입을 정의합니다. (any로 단순화)
+type PlanData = any;
+
 export default function PlanPage() {
   const router = useRouter();
-  const { runOptimization } = useStore();
-  const [parsedRequest, setParsedRequest] = useState<OptimizationRequest | null>(null);
-
-  const handleOptimize = async (request: OptimizationRequest) => {
-    await runOptimization(request);
-    router.push('/routes');
-  };
+  const [parsedPlan, setParsedPlan] = useState<PlanData | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   return (
     <div className="container mx-auto py-8 space-y-8">
-      {/* Header */}
+      {/* Header (기존과 동일) */}
       <div className="text-center space-y-4">
         <div className="flex items-center justify-center gap-3">
           <MapPin className="w-8 h-8 text-green-600" />
@@ -53,13 +50,38 @@ export default function PlanPage() {
             </TabsList>
             
             <TabsContent value="natural" className="mt-6">
-              <NaturalLanguageInput onParsed={setParsedRequest} />
-              
-              {parsedRequest && (
+              <div className="grid grid-cols-2 gap-4">
+                {/* 💡 자식에게 onParsed와 setIsLoading 함수를 props로 전달 */}
+                <NaturalLanguageInput onParsed={setParsedPlan} setIsLoading={setIsLoading} />
+                
+                {/* 💡 입력 분석 Card를 부모 컴포넌트에서 직접 관리 */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>입력 분석</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="p-4 bg-gray-100 rounded-md h-full overflow-auto text-sm">
+                      {isLoading
+                        ? "분석 및 저장 중..."
+                        : parsedPlan
+                          ? JSON.stringify({
+                              ...parsedPlan,
+                              vehicles: JSON.parse(parsedPlan.vehicles || '[]'),
+                              jobs: JSON.parse(parsedPlan.jobs || '[]')
+                            }, null, 2)
+                          : "LLM이 자연어를 구조화된 JSON으로 변환합니다"
+                      }
+                    </pre>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* 파싱된 데이터(parsedPlan)가 있을 때만 "최적화 실행" 버튼을 보여줌 */}
+              {parsedPlan && (
                 <div className="mt-6 pt-6 border-t">
                   <div className="flex justify-center">
                     <button
-                      onClick={() => handleOptimize(parsedRequest)}
+                      onClick={() => router.push(`/routes?planId=${parsedPlan.id}`)}
                       className="px-8 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
                     >
                       최적화 실행
@@ -70,7 +92,7 @@ export default function PlanPage() {
             </TabsContent>
             
             <TabsContent value="form" className="mt-6">
-              <FormInput onSubmit={handleOptimize} />
+              {/* <FormInput onSubmit={handleOptimize} /> */}
             </TabsContent>
           </Tabs>
         </CardContent>
