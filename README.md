@@ -19,6 +19,7 @@ LLM을 활용한 친환경 물류 경로 최적화 시스템의 웹 프론트엔
 
 ## 🛠️ 기술 스택
 
+### Frontend
 - **Framework**: Next.js 13 (App Router)
 - **Language**: TypeScript
 - **Styling**: TailwindCSS + shadcn/ui
@@ -26,43 +27,76 @@ LLM을 활용한 친환경 물류 경로 최적화 시스템의 웹 프론트엔
 - **차트**: Recharts
 - **아이콘**: Lucide React
 
-## 📦 설치 및 실행
+### Backend
+- **Framework**: Flask
+- **Language**: Python
+- **최적화 엔진**: Google OR-Tools
+- **데이터베이스**: Oracle Database
+- **DB 연동**: oracledb
 
+## 📦 설치 및 실행
+### Frontend
 ```bash
+# frontend 폴더로 이동
+cd frontend
+
 # 의존성 설치
 npm install
 
-# 개발 서버 실행
+# 개발 서버 실행 (http://localhost:3000)
 npm run dev
-
-# 빌드
-npm run build
-
-# 프로덕션 실행
-npm start
 ```
+### Backend
+# backend 폴더로 이동
+cd backend
 
-개발 서버는 [http://localhost:3000](http://localhost:3000)에서 실행됩니다.
+# 가상환경 생성 및 활성화
+python -m venv venv
+.\venv\Scripts\activate
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# 개발 서버 실행 (http://localhost:5000)
+python app.py
+
 
 ## 📁 프로젝트 구조
 
 ```
-├── app/                    # Next.js App Router 페이지
-│   ├── plan/              # 경로 계획 페이지
-│   ├── routes/            # 경로 결과 페이지  
-│   ├── dashboard/         # 대시보드 페이지
-│   └── admin/             # 데이터 관리 페이지
-├── components/            # 재사용 가능한 컴포넌트
-│   ├── ui/               # shadcn/ui 컴포넌트
-│   ├── layout/           # 레이아웃 컴포넌트
-│   ├── plan/             # 계획 관련 컴포넌트
-│   └── admin/            # 관리 관련 컴포넌트
-├── lib/                   # 유틸리티 및 설정
-│   ├── types.ts          # TypeScript 타입 정의
-│   ├── store.ts          # Zustand 상태 관리
-│   ├── mock-data.ts      # 더미 데이터
-│   └── utils.ts          # 공통 유틸리티
-└── hooks/                 # 커스텀 훅
+Eco Logistics Optimizer/
+├── frontend/                 # Next.js 프론트엔드 소스 코드
+│   ├── app/                  # Next.js App Router 페이지
+│   │   ├── plan/             # 경로 계획 페이지
+│   │   ├── routes/           # 경로 결과 페이지
+│   │   ├── dashboard/        # 대시보드 페이지
+│   │   └── admin/            # 데이터 관리 페이지
+│   ├── components/           # 재사용 가능한 컴포넌트
+│   │   ├── ui/               # shadcn/ui 컴포넌트
+│   │   ├── layout/           # 레이아웃 컴포넌트
+│   │   ├── plan/             # 계획 관련 컴포넌트
+│   │   └── admin/            # 관리 관련 컴포넌트
+│   ├── lib/                  # 유틸리티 및 설정
+│   │   ├── types.ts          # TypeScript 타입 정의
+│   │   ├── store.ts          # Zustand 상태 관리
+│   │   ├── mock-data.ts      # 더미 데이터
+│   │   └── utils.ts          # 공통 유틸리티
+│   └── hooks/                # 커스텀 훅
+├── backend/                  # Flask 백엔드 소스 코드
+│   ├── venv/                 # 파이썬 가상환경
+│   ├── app.py                # Flask API 서버 실행 파일
+│   ├── config.py             # 환경 설정 관리
+│   ├── .env                  # DB 접속 정보 등 (Git 추적 안됨)
+│   ├── requirements.txt      # 파이썬 의존성 목록
+│   ├── optimizer/            # OR-Tools 최적화 엔진
+│   │   ├── __init__.py
+│   │   └── engine.py
+│   └── services/             # 핵심 비즈니스 로직
+│       ├── __init__.py
+│       ├── db_handler.py     # 데이터베이스 핸들러
+│       └── co2_calculator.py # CO2 배출량 계산기
+└── .gitignore                # Git 무시 파일 (루트)
+└── README.md                 # 프로젝트 설명서 (현재 파일)
 ```
 
 ## 🎯 현재 구현 상태
@@ -112,7 +146,7 @@ npm start
 - **Route**: 경로 정보 (차량, 스텝, 거리, CO₂, 소요시간)
 
 ## 🔧 환경 설정
-
+### Frontend
 현재는 프론트엔드 목업으로 구현되어 있으며, 모든 데이터는 더미 데이터를 사용합니다.
 실제 API 연결 시 다음 환경변수가 필요합니다:
 
@@ -120,6 +154,14 @@ npm start
 NEXT_PUBLIC_KAKAO_MAP_API_KEY=your_kakao_map_api_key
 NEXT_PUBLIC_LLM_API_ENDPOINT=your_llm_api_endpoint
 NEXT_PUBLIC_OPTIMIZATION_API_ENDPOINT=your_optimization_api_endpoint
+```
+### Backend
+백엔드 실행 시 backend 폴더에 .env 파일을 생성하고 다음 환경변수가 필요합니다:
+
+```env
+DB_USER=your_oracle_username
+DB_PASSWORD=your_oracle_password
+DB_DSN=your_oracle_dsn
 ```
 
 ## 🤝 기여하기
@@ -133,7 +175,3 @@ NEXT_PUBLIC_OPTIMIZATION_API_ENDPOINT=your_optimization_api_endpoint
 ## 📄 라이선스
 
 이 프로젝트는 MIT 라이선스 하에 있습니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
-
----
-
-**참고**: 현재는 프론트엔드 목업 상태이며, 실제 API 연결은 향후 개발 예정입니다.
