@@ -47,6 +47,7 @@ npm install
 npm run dev
 ```
 ### Backend
+```bash
 # backend 폴더로 이동
 cd backend
 
@@ -59,7 +60,7 @@ pip install -r requirements.txt
 
 # 개발 서버 실행 (http://localhost:5000)
 python app.py
-
+```
 
 ## 📁 프로젝트 구조
 
