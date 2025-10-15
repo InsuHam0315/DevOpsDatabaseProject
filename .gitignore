@@ -38,3 +38,6 @@ next-env.d.ts
 # Backend files
 /backend/venv/
 /backend/.env
+/backend/app.py
+
+.json
