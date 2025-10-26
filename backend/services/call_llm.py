@@ -46,9 +46,12 @@ def parse_natural_language():
         return jsonify({"error": "natural_input is required"}), 400
 
     try:
+        current_date = datetime.now()
+        current_date_str = current_date.strftime('%Y-%m-%d')
         # --- 자연어를 JSON으로 변환 (LLM 호출) ---
         prompt = f"""
         당신은 물류 계획 전문가의 자연어 요청을 VRP(Vehicle Routing Problem)용 JSON 데이터로 변환하는 AI입니다.
+        현재 날짜는 **{current_date_str}** 입니다. 이 정보를 바탕으로 "오늘", "내일", "모레" 등의 상대적인 날짜 표현을 정확한 "YYYY-MM-DD" 형식으로 변환해주세요.
         아래 사용자 요청에서 다음 구조에 맞춰 정보를 추출하여 JSON 형식으로만 응답해주세요. 다른 설명은 절대 추가하지 마세요.
         - "run_date": "YYYY-MM-DD" 형식의 날짜 문자열
         - "vehicles": ["차량ID1", "차량ID2", ...] 형식의 차량 ID 문자열 배열
