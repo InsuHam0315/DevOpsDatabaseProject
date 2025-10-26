@@ -3,9 +3,7 @@ from flask import Flask, jsonify
 import config
 # db_handler.py 에서 만든 테스트 함수를 불러옵니다.
 from services.db_handler import test_db_connection
-from services.call_llm import call_llm, analyze_plan
-
-app = Flask(__name__)
+from services.call_llm import app
 
 # 설정값이 잘 로드되었는지 터미널에 출력해서 확인해봅니다.
 # config.DB_USER 형태로 사용합니다.
