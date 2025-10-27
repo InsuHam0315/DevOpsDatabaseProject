@@ -1,32 +1,49 @@
+# backend/app.py
+import os
 from flask import Flask, jsonify
-# config.py에서 객체가 아닌, 필요한 변수들을 직접 불러옵니다.
-import config
-# db_handler.py 에서 만든 테스트 함수를 불러옵니다.
+from flask_cors import CORS
+
+# 환경변수 로드
+import config  # module-level 변수 사용(DB_USER 등)
+
+# 서비스/엔진
 from services.db_handler import test_db_connection
-from services.call_llm import app
+from services.call_llm import llm_bp  # Blueprint만 가져옴
 
-# 설정값이 잘 로드되었는지 터미널에 출력해서 확인해봅니다.
-# config.DB_USER 형태로 사용합니다.
-print(f"DB User from config: {config.DB_USER}")
-print(f"DB DSN from config: {config.DB_DSN}")
+def create_app() -> Flask:
+    app = Flask(__name__)
+    CORS(app)
+
+    # Blueprint 등록
+    app.register_blueprint(llm_bp, url_prefix="/llm")
+
+    # 헬스체크
+    @app.get("/health")
+    def health():
+        return jsonify(status="ok")
+
+    # 루트
+    @app.get("/")
+    def index():
+        return jsonify({"status": "ok",
+                        "message": "Eco Logistics Optimizer API is running!"})
+
+    # DB 연결 테스트
+    @app.get("/test-db")
+    def db_connection_test_endpoint():
+        result = test_db_connection()  # {"status": "...", "message": "..."}
+        code = 200 if result.get("status") == "success" else 500
+        return jsonify(result), code
+
+    return app
 
 
-# '/' 기본 주소는 서버가 켜져 있는지 확인하는 용도로 그대로 둡니다.
-@app.route('/')
-def index():
-    """서버가 살아있는지 확인하는 기본 엔드포인트"""
-    return jsonify({"status": "ok", "message": "Eco Logistics Optimizer API is running!"})
+if __name__ == "__main__":
+    # 설정 출력(확인용)
+    print(f"DB User from config: {config.DB_USER}")
+    print(f"DB DSN from config: {config.DB_DSN}")
 
-# '/test-db' 라는 새로운 주소를 만듭니다.
-@app.route('/test-db')
-def db_connection_test_endpoint():
-    """DB 연결을 테스트하는 API 엔드포인트"""
-    result = test_db_connection()
-    
-    if result["status"] == "success":
-        return jsonify(result), 200
-    else:
-        return jsonify(result), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app = create_app()
+    port = int(os.getenv("FLASK_RUN_PORT", "5000"))
+    debug = os.getenv("FLASK_DEBUG", "1") == "1"
+    app.run(host="0.0.0.0", port=port, debug=debug)

@@ -1,4 +1,4 @@
-// File: C:\Users\Windows 10\Desktop\DevOps_LLM\frontend\app\layout.tsx
+// File: C:\Users\Insu Ham\DevOpsDatabaseProject\frontend\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata } from 'next/dist/lib/metadata/types/metadata-interface.js'
 
