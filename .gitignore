@@ -38,3 +38,11 @@ next-env.d.ts
 # Backend files
 /backend/venv/
 /backend/.env
+*.node
+.next/
+node_modules/
+dist/
+build/
+*.pth
+*.bin
+*.h5

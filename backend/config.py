@@ -8,3 +8,8 @@ load_dotenv()
 DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_DSN = os.getenv('DB_DSN')
+
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+OPENROUTER_API_URL = os.getenv('OPENROUTER_API_URL')
+
+FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
