@@ -2,10 +2,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import config
 # db_handler.py 에서 DB 관련 함수들을 가져온다고 가정
-from .db_handler import test_db_connection, save_run, save_job, save_llm_analysis_summary # 함수 이름 변경 및 추가
+from .db_handler import test_db_connection # 함수 이름 변경 및 추가
+from .LLM_DB_SAVE import save_run, save_job, save_llm_analysis_summary
 import requests
 import json
-import oracledb
 from datetime import datetime # datetime 임포트 추가
 
 app = Flask(__name__)
