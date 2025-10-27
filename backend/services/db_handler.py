@@ -5,19 +5,19 @@ from datetime import datetime
 # --- 1. DB 연결 함수 ---
 def test_db_connection():
     try:
-        with oracledb.connect(
+        conn = oracledb.connect(
             user=config.DB_USER,
             password=config.DB_PASSWORD,
             dsn=config.DB_DSN
-        ) as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT 'PING' FROM dual")
-                result = cur.fetchone()
-                print("✅ DB 연결 성공:", result)
-                return {"status": "success", "message": result[0], "dsn": config.DB_DSN}
+        )
+        print("✅ 데이터베이스 연결 성공!")
+        # 👇 성공 시 연결 객체(conn) 자체를 반환해야 합니다.
+        return conn
     except Exception as e:
-        print("❌ DB 연결 실패:", e)
-        return {"status": "error", "message": str(e), "dsn": config.DB_DSN}
+        print(f"❌ 데이터베이스 연결 실패: {e}")
+        # 👇 실패 시 None을 반환하거나 예외를 발생시킵니다.
+        # return None
+        raise ConnectionError(f"DB 연결 실패: {e}") # 예외 발생이 더 명확할 수 있음
 # --------------------------------LLM 저장 파트----------------------------------------
 # --- 2. RUNS 테이블 저장 함수 ---
 def save_run(cursor: oracledb.Cursor, run_params: dict):
