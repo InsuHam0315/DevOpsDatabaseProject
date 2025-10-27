@@ -94,6 +94,7 @@ Eco Logistics Optimizer/
 │   │   └── engine.py
 │   └── services/             # 핵심 비즈니스 로직
 │       ├── __init__.py
+│       │── call_llm.py       # LLM 호출 로직
 │       ├── db_handler.py     # 데이터베이스 핸들러
 │       └── co2_calculator.py # CO2 배출량 계산기
 └── .gitignore                # Git 무시 파일 (루트)
@@ -163,6 +164,9 @@ NEXT_PUBLIC_OPTIMIZATION_API_ENDPOINT=your_optimization_api_endpoint
 DB_USER=your_oracle_username
 DB_PASSWORD=your_oracle_password
 DB_DSN=your_oracle_dsn
+
+OPENROUTER_API_KEY=""
+OPENROUTER_API_URL=""
 ```
 
 ## 🤝 기여하기

@@ -18,7 +18,7 @@ def test_db_connection():
         # 👇 실패 시 None을 반환하거나 예외를 발생시킵니다.
         # return None
         raise ConnectionError(f"DB 연결 실패: {e}") # 예외 발생이 더 명확할 수 있음
-
+# --------------------------------LLM 저장 파트----------------------------------------
 # --- 2. RUNS 테이블 저장 함수 ---
 def save_run(cursor: oracledb.Cursor, run_params: dict):
     """
@@ -106,3 +106,4 @@ def save_llm_analysis_summary(cursor: oracledb.Cursor, summary_params: dict):
     except Exception as e:
         print(f"❌ RUN_SUMMARY 테이블 저장 실패: {e}")
         raise
+# --------------------------------------------------------------------------------------------
