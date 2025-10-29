@@ -3,6 +3,19 @@ import config # DB 접속 정보를 담고 있는 config 모듈
 from datetime import datetime
 
 # --- 1. DB 연결 함수 ---
+def get_db_connection():
+    """실제 DB 작업을 위한 새 Oracle 연결 객체를 반환합니다."""
+    try:
+        conn = oracledb.connect(
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            dsn=config.DB_DSN
+        )
+        return conn # ⬅️ 중요: dict가 아닌 conn 객체 자체를 반환
+    except Exception as e:
+        print(f"❌ DB 연결 생성 실패: {e}")
+        raise # ⬅️ 오류가 나면 앱이 알 수 있도록 예외를 다시 발생시킴
+
 def test_db_connection():
     try:
         conn = oracledb.connect(
@@ -18,6 +31,7 @@ def test_db_connection():
         # 👇 실패 시 None을 반환하거나 예외를 발생시킵니다.
         # return None
         raise ConnectionError(f"DB 연결 실패: {e}") # 예외 발생이 더 명확할 수 있음
+
 # --------------------------------LLM 저장 파트----------------------------------------
 # --- 2. RUNS 테이블 저장 함수 ---
 def save_run(cursor: oracledb.Cursor, run_params: dict):
