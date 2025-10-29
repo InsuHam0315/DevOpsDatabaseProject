@@ -127,20 +127,20 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData.weekly_co2}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
+                <XAxis
+                  dataKey="date"
                   tick={{ fontSize: 12 }}
                   tickFormatter={(value) => new Date(value).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
                 />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip 
+                <Tooltip
                   labelFormatter={(value) => `날짜: ${new Date(value).toLocaleDateString('ko-KR')}`}
                   formatter={(value: any) => [`${value}kg`, 'CO₂ 배출량']}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="co2" 
-                  stroke="#22c55e" 
+                <Line
+                  type="monotone"
+                  dataKey="co2"
+                  stroke="#22c55e"
                   strokeWidth={2}
                   dot={{ fill: '#22c55e', strokeWidth: 2 }}
                   activeDot={{ r: 6 }}
@@ -168,72 +168,6 @@ export default function DashboardPage() {
                 <Bar dataKey="distance" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Sector Demand Pie Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-purple-600" />
-              섹터별 처리량
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData.sector_demands}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="demand"
-                >
-                  {chartData.sector_demands.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: any) => [`${value}kg`, '처리량']} />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Summary Stats */}
-        <Card>
-          <CardHeader>
-            <CardTitle>주요 지표 요약</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">
-                  {chartData.weekly_co2.reduce((sum, d) => sum + d.co2, 0).toFixed(1)}kg
-                </p>
-                <p className="text-sm text-muted-foreground">주간 총 CO₂</p>
-              </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-2xl font-bold text-blue-600">
-                  {chartData.vehicle_distances.reduce((sum, d) => sum + d.distance, 0)}km
-                </p>
-                <p className="text-sm text-muted-foreground">총 주행거리</p>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <p className="text-2xl font-bold text-purple-600">
-                  {chartData.sector_demands.reduce((sum, d) => sum + d.demand, 0)}kg
-                </p>
-                <p className="text-sm text-muted-foreground">총 처리량</p>
-              </div>
-              <div className="text-center p-4 bg-amber-50 rounded-lg">
-                <p className="text-2xl font-bold text-amber-600">
-                  {runHistory.length}개
-                </p>
-                <p className="text-sm text-muted-foreground">실행 건수</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>

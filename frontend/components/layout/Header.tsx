@@ -1,11 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Leaf, Menu } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Leaf, Menu, TrendingUp, Route as RouteIcon, Clock, Zap, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useStore } from '@/lib/store';
 
 const navigation = [
   { name: '경로 계획', href: '/plan' },
@@ -16,30 +18,70 @@ const navigation = [
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { kpis, isAuthenticated, currentUser, logout } = useStore();
+
+  const handleLogout = () => {
+    logout();
+    router.push('/login');
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-14 items-center">
+      <div className="container flex h-auto items-center py-3">
         <Link href="/" className="flex items-center space-x-2 mr-6">
           <Leaf className="h-6 w-6 text-green-600" />
           <span className="font-bold text-lg">Eco Logistics Optimizer</span>
         </Link>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
-          {navigation.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "transition-colors hover:text-foreground/80",
-                pathname === item.href ? "text-foreground" : "text-foreground/60"
-              )}
-            >
-              {item.name}
-            </Link>
-          ))}
-        </nav>
+        <div className="flex-1 flex flex-col md:flex-row md:items-center gap-4">
+          {/* Desktop Navigation */}
+          <nav className="hidden md:flex items-center space-x-6 text-sm font-medium">
+            {navigation.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "transition-colors hover:text-foreground/80",
+                  pathname === item.href ? "text-foreground" : "text-foreground/60"
+                )}
+              >
+                {item.name}
+              </Link>
+            ))}
+          </nav>
+
+          {/* KPI Summary */}
+          <div className="hidden lg:flex items-center gap-4 ml-auto">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg">
+              <RouteIcon className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-900">{kpis.total_distance_km}km</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg">
+              <Zap className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-900">{kpis.total_co2_kg}kg CO₂</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-lg">
+              <Clock className="w-4 h-4 text-purple-600" />
+              <span className="text-sm font-medium text-purple-900">{Math.floor(kpis.total_time_min / 60)}h {kpis.total_time_min % 60}m</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-medium text-emerald-900">{kpis.saving_percent}%</span>
+            </div>
+          </div>
+
+          {/* User Info & Logout */}
+          {isAuthenticated && (
+            <div className="hidden md:flex items-center gap-3 ml-4">
+              <span className="text-sm text-muted-foreground">{currentUser}</span>
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut className="w-4 h-4 mr-2" />
+                로그아웃
+              </Button>
+            </div>
+          )}
+        </div>
 
         {/* Mobile Navigation */}
         <Sheet>
