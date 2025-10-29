@@ -1,18 +1,16 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Blueprint, request, jsonify
 import config
 # db_handler.py 에서 DB 관련 함수들을 가져온다고 가정
-from .db_handler import test_db_connection # 함수 이름 변경 및 추가
-from .LLM_DB_SAVE import save_run, save_job, save_llm_analysis_summary
+from services.db_handler import get_db_connection # 함수 이름 변경 및 추가
+from LLM.llm_db_save import save_run, save_job, save_llm_analysis_summary
+from .lat_lon_kakao import enhance_parsed_data_with_geocoding
 import requests
 import json
 from datetime import datetime # datetime 임포트 추가
 
-app = Flask(__name__)
-CORS(app)
+llm_bp = Blueprint('llm', __name__) #flask는 독립적이므로 app이 아닌 blueprint를 사용
 
 
-# LLM 호출 함수 (이전과 동일, 오류 처리 개선)
 def call_llm(prompt: str) -> str:
     # ... (이전 코드와 동일하게 유지하되, 오류 로깅 등 개선된 부분 유지) ...
     headers = {"Authorization": f"Bearer {config.OPENROUTER_API_KEY}"}
@@ -29,9 +27,94 @@ def call_llm(prompt: str) -> str:
         print(f"API 응답 구조 오류: {e}, 응답: {response.text if 'response' in locals() else 'N/A'}")
         raise ValueError("API 응답 구조가 예상과 다릅니다.")
 
+#-----------------------------------------------------------------------------------------------------
+def get_sector_coordinates(sector_name: str) -> dict:
+    """SECTOR 테이블에서 sector_name에 해당하는 좌표를 조회 - 디버깅 강화"""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cleaned_name = sector_name.strip()
+        print(f"🔍 SECTOR 테이블 조회: '{cleaned_name}'")
+        
+        # 1. 먼저 SECTOR 테이블에 어떤 데이터가 있는지 전체 조회
+        cursor.execute("SELECT sector_name, lat, lon FROM SECTOR")
+        all_sectors = cursor.fetchall()
+        print(f"📋 SECTOR 테이블 전체 데이터: {all_sectors}")
+        
+        # 2. 정확한 매칭 시도
+        cursor.execute("""
+            SELECT lat, lon FROM SECTOR WHERE sector_name = :sector_name
+        """, {'sector_name': cleaned_name})
+        
+        result = cursor.fetchone()
+        if result:
+            print(f"✅ SECTOR 테이블에서 찾음: '{cleaned_name}' -> ({result[0]}, {result[1]})")
+            return {'lat': result[0], 'lon': result[1]}
+        else:
+            print(f"❌ SECTOR 테이블에서 찾지 못함: '{cleaned_name}'")
+            
+            # 3. 유사한 데이터가 있는지 확인
+            cursor.execute("""
+                SELECT sector_name, lat, lon FROM SECTOR 
+                WHERE sector_name LIKE '%' || :partial_name || '%'
+            """, {'partial_name': cleaned_name})
+            
+            similar_results = cursor.fetchall()
+            if similar_results:
+                print(f"🔍 유사한 SECTOR 데이터: {similar_results}")
+            else:
+                print(f"🔍 '{cleaned_name}'와 유사한 데이터도 없음")
+                
+            return None
+    except Exception as e:
+        print(f"SECTOR 테이블 조회 오류: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def preprocess_with_sector_data(parsed_data: dict) -> dict:
+    """SECTOR 테이블을 참조하여 좌표를 미리 채움"""
+    if not parsed_data.get('runs') or not parsed_data.get('jobs'):
+        return parsed_data
+    
+    # 출발지(runs) 좌표 채우기
+    for run in parsed_data.get('runs', []):
+        depot_address = run.get('depot_address')
+        if depot_address:
+            # 🔥 주소 문자열 그대로 SECTOR 테이블에서 검색
+            coords = get_sector_coordinates(depot_address)
+            if coords:
+                run['depot_lat'] = coords['lat']
+                run['depot_lon'] = coords['lon']
+                print(f"✅ SECTOR에서 출발지 좌표 채움: {depot_address}")
+            else:
+                print(f"ℹ️  SECTOR에 없는 출발지: {depot_address}")
+    
+    # 도착지(jobs) 좌표 채우기 - 주소 그대로 SECTOR 테이블에서 검색
+    for job in parsed_data.get('jobs', []):
+        address = job.get('address')
+        if address:
+            # 🔥 주소 문자열 그대로 SECTOR 테이블에서 검색
+            coords = get_sector_coordinates(address)
+            if coords:
+                job['lat'] = coords['lat']
+                job['lon'] = coords['lon']
+                print(f"✅ SECTOR에서 도착지 좌표 채움: {address}")
+            else:
+                print(f"ℹ️  SECTOR에 없는 도착지: {address}")
+    
+    return parsed_data
+#-----------------------------------------------------------------------------------------------------
+
+
+
+
 # --- API #1: 자연어 파싱 API ---
 # (이전 제안과 동일하게 유지 - DB 저장 로직 없음)
-@app.route('/api/parse-natural-language', methods=['POST'])
+@llm_bp.route('/api/parse-natural-language', methods=['POST'])
 def parse_natural_language():
     """
     사용자의 자연어 입력을 받아 LLM으로 분석하여 JSON 형식으로 변환하여 반환합니다.
@@ -52,13 +135,43 @@ def parse_natural_language():
         prompt = f"""
         당신은 물류 계획 전문가의 자연어 요청을 VRP(Vehicle Routing Problem)용 JSON 데이터로 변환하는 AI입니다.
         현재 날짜는 **{current_date_str}** 입니다. 이 정보를 바탕으로 "오늘", "내일", "모레" 등의 상대적인 날짜 표현을 정확한 "YYYY-MM-DD" 형식으로 변환해주세요.
+
         아래 사용자 요청에서 다음 구조에 맞춰 정보를 추출하여 JSON 형식으로만 응답해주세요. 다른 설명은 절대 추가하지 마세요.
+
+        [JSON 구조]
         - "run_date": "YYYY-MM-DD" 형식의 날짜 문자열
         - "vehicles": ["차량ID1", "차량ID2", ...] 형식의 차량 ID 문자열 배열
-        - "jobs": [ {{ "sector_id": "섹터ID", "demand_kg": 숫자, "tw_start": "HH24:MI", "tw_end": "HH24:MI", "priority": 숫자, "lat": 숫자 또는 null, "lon": 숫자 또는 null }}, ... ] 형식의 작업 객체 배열
-        - lat, lon 값은 모르면 null 로 설정하세요.
-        - 날짜, 시간 형식과 JSON 구조를 정확히 지켜주세요.
-        - 우선순위(priority)에는 절대로 0이 들어갈 수 없습니다. 순서대로 1,2,3,4를 지정해주세요.
+        - "runs": [
+            {{
+                "run_date": "YYYY-MM-DD",
+                "depot_address": "출발지 주소",  <!-- 출발지 주소 추가 -->
+                "depot_lat": null,  <!-- null로 설정. 후처리에서 좌표가 채워질 수 있습니다 -->
+                "depot_lon": null,  <!-- null로 설정. 후처리에서 좌표가 채워질 수 있습니다 -->
+                "natural_language_input": "원본 사용자 요청문"
+            }}
+        ]
+        - "jobs": [ 
+            {{ 
+            "sector_id": "도착지의 앞 지역명_NEW_PORT" <!-- 이 양식을 준수해주세요--> 
+            "address": "정확한 주소 문자열",  <!-- 가능한 상세한 주소로 추출해주세요 -->
+            "demand_kg": 숫자, 
+            "lat": null,  <!-- null로 설정. 후처리에서 좌표가 채워질 수 있습니다 -->
+            "lon": null   <!-- null로 설정. 후처리에서 좌표가 채워질 수 있습니다 -->
+            }}, 
+            ... 
+        ]
+
+        [추가 지침]
+        1. 사용자 요청에서 **출발지**와 **도착지**를 구분해주세요:
+            - 출발지: "~에서 출발", "~부터", "~에서" 등으로 표현된 곳
+            - 도착지: "~에 배송", "~로", "~에" 등으로 표현된 곳
+        2. 출발지는 "depot_address"에, 도착지는 "jobs"의 "address"에 넣어주세요.
+        3. 주소(address)는 가능한 정확한 도로명 주소나 지번 주소로 추출해주세요.
+        4. lat, lon 값은 항상 null로 설정해주세요.
+        5. 날짜, 시간 형식과 JSON 구조를 정확히 지켜주세요.
+        6. "depot_lat"과 "depot_lon"은 출발 지점 좌표, "lat"과 "lon"은 도착지점 좌표입니다.
+        7. "natural_language_input"에는 사용자의 원본 요청문을 그대로 넣어주세요. (단 요구사항이 2개 이상일때 '\n'으로 줄바꿈을 한다면 각각 적어주세요.)
+        <!--sector_id 예시) 도착지가 군산이라면 GUNSAN_NEW_PORT, 서울이라면 SEOUL_NEW_PORT, 부산이라면 BUSAN_NEW_PORT-->
         사용자 요청: "{user_input}"
         """
         llm_response_content = call_llm(prompt)
@@ -84,6 +197,9 @@ def parse_natural_language():
              print(f"LLM 응답 JSON 파싱 오류: {json_err}, 원본 응답: {llm_response_content}")
              raise ValueError(f"LLM 응답을 JSON으로 파싱하는 데 실패했습니다: {json_err}")
 
+        parsed_data = preprocess_with_sector_data(parsed_data)
+        
+        parsed_data = enhance_parsed_data_with_geocoding(parsed_data)
 
         return jsonify(parsed_data), 200
 
@@ -97,7 +213,7 @@ def parse_natural_language():
 
 
 # --- API #2: 계획 저장 및 LLM 분석 API ---
-@app.route('/api/save-plan-and-analyze', methods=['POST'])
+@llm_bp.route('/api/save-plan-and-analyze', methods=['POST'])
 def save_plan_and_analyze():
     if request.method == 'OPTIONS':
         return jsonify(success=True)
@@ -108,13 +224,13 @@ def save_plan_and_analyze():
     plan_data = request.json
     if not plan_data:
         return jsonify({"error": "계획 데이터(JSON)가 필요합니다."}), 400
-
+    
     conn = None
     try:
-        conn = test_db_connection() # DB 연결 가져오기 (db_handler.py 구현 필요)
+        conn = get_db_connection() #DB 연결 가져오기 (db_handler.py 구현 필요)
         cursor = conn.cursor()
 
-        # --- 1. RUNS 테이블에 기본 정보 저장 ---
+        # --- 1. RUNS 테이블에 기본 정보 저장 --- 
         run_date_str = plan_data.get('run_date')
         try:
              # Oracle DATE 타입으로 변환 (python-oracledb 2.0 이상)
@@ -124,18 +240,30 @@ def save_plan_and_analyze():
         except (ValueError, TypeError):
             return jsonify({"error": "run_date 형식이 잘못되었습니다. (YYYY-MM-DD 필요)"}), 400
 
-        # run_id 생성 (DB 시퀀스 또는 Python UUID 등 사용 권장)
-        run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}" # 임시 ID
+        all_run_ids = []
+        runs_data = plan_data.get('runs', [])
 
-        run_params = {
-            "run_id": run_id,
-            "run_date_str": run_date_str, # 문자열로 전달 후 함수 내에서 TO_DATE 사용
-            "depot_lat": plan_data.get('depot_lat', 35.940000),
-            "depot_lon": plan_data.get('depot_lon', 126.680000),
-            "natural_language_input": plan_data.get('natural_input', None), # 원본 텍스트가 있다면
-            "optimization_status": "ANALYZING" # 상태 변경: 분석 중
-        }
-        save_run(cursor, run_params) # db_handler.py에 구현 필요
+        if not runs_data:
+            return jsonify({"error": "runs 데이터가 없습니다."}), 400
+        
+        for i, run_item in enumerate(runs_data):
+            run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{i}"
+            
+            run_date_str = run_item.get('run_date')
+            if not run_date_str:
+                return jsonify({"error": f"run_date가 없습니다. (run index: {i})"}), 400
+
+            # RUNS 테이블 저장
+            run_params = {
+                "run_id": run_id,
+                "run_date_str": run_date_str,
+                "depot_lat": run_item.get('depot_lat'),
+                "depot_lon": run_item.get('depot_lon'),
+                "natural_language_input": run_item.get('natural_language_input'),
+                "optimization_status": "ANALYZING"
+            }
+            save_run(cursor, run_params)
+            all_run_ids.append(run_id)
 
         # --- 2. JOBS 테이블에 작업 정보 저장 ---
         jobs_data = plan_data.get('jobs', [])
@@ -144,74 +272,21 @@ def save_plan_and_analyze():
             job_params = {
                 "run_id": run_id,
                 "sector_id": job.get('sector_id'),
-                "address": job.get('address', f"{job.get('sector_id')} 주소"),
-                "latitude": job.get('lat') if job.get('lat') is not None else 0, # None 대신 0 또는 적절한 값 처리
-                "longitude": job.get('lon') if job.get('lon') is not None else 0,
-                "demand_kg": job.get('demand_kg'),
-                 # 시간 문자열 그대로 전달 후 함수 내에서 TO_TIMESTAMP 처리 가정
-                "tw_start_str": job.get('tw_start'),
-                "tw_end_str": job.get('tw_end'),
-                "priority": job.get('priority', 0),
-                "run_date_str": run_date_str # 시간 변환 시 날짜 정보 필요
+                "address": job.get('resolved_address', job['address']),
+                "lat": job.get('lat'),
+                "lon": job.get('lon'),
+                "demand_kg": job.get('demand_kg')
             }
             job_id = save_job(cursor, job_params) # db_handler.py에 구현 필요
             saved_job_ids.append(job_id)
 
         conn.commit() # RUNS, JOBS 저장 완료
-
-        # --- 3. LLM 분석/설명 생성 ---
-        # 분석에 필요한 정보 요약 (예: 차량 수, 총 작업 수, 총 수요량 등)
-        vehicle_count = len(plan_data.get('vehicles', []))
-        job_count = len(jobs_data)
-        total_demand = sum(job.get('demand_kg', 0) for job in jobs_data)
-
-        llm_prompt_for_analysis = f"""
-        당신은 물류 계획 분석 전문가 AI입니다. 아래 제공된 계획 데이터를 바탕으로, 이 계획의 특징과 예상되는 효율성, 그리고 친환경 측면에 대해 전문적인 분석 보고서 형식으로 작성해주세요. 실제 경로 최적화 결과는 없으므로, 데이터 자체의 특징(작업 수, 총 물량, 사용 차량 종류, 시간 제약 등)에 초점을 맞춰 분석합니다.
-
-        [계획 기본 정보 (ID: {run_id})]
-        - 실행 날짜: {run_date_str}
-        - 사용 예정 차량 수: {vehicle_count} 대 (차량 목록: {plan_data.get('vehicles', [])})
-        - 총 작업 수: {job_count} 건
-        - 총 배송 물량: {total_demand} kg
-
-        [작업 목록 요약 (최대 3개)]
-        {json.dumps(jobs_data[:3], indent=2, ensure_ascii=False)}
-
-        분석 내용에는 다음 사항을 포함해주세요:
-        - 분석 내용은 아래 세 가지 요구사항만 넣습니다 그 외에는 아무것도 넣지 않습니다.
-        1. 사용 차량(종류, 대수)과 총 물량 간의 적절성 예측 (가능하다면).
-        2. 시간 제약 조건(TW)이 경로 계획에 미칠 영향 예측.
-        3. 친환경 차량(EV, 하이브리드 등) 사용 여부 및 예상되는 환경적 이점 언급.
-        - 모든 설명은 간결하고 짧게 가능하면 두 줄 이내로 설명해주세요.
-        실제 최적화 결과가 아니므로 확정적인 수치 대신 예상이나 분석 위주로 설명해주세요.
-        """
-        try:
-             llm_explanation = call_llm(llm_prompt_for_analysis)
-        except Exception as llm_err:
-             print(f"LLM 분석 생성 실패: {llm_err}")
-             llm_explanation = "LLM 분석을 생성하는 데 실패했습니다."
-
-        # --- 4. LLM 분석 결과 저장 ---
-        # RUN_SUMMARY 테이블에 LLM 설명과 임시 KPI 값 저장
-        summary_params = {
-            "run_id": run_id,
-            "llm_explanation": llm_explanation,
-            # 실제 최적화가 없으므로 KPI는 0 또는 None으로 저장
-            "total_distance_km": 0,
-            "total_co2_g": 0,
-            "total_time_min": 0,
-            "saving_pct": 0
-        }
-        # save_llm_analysis_summary 함수 호출 (db_handler.py에 구현 필요)
-        save_llm_analysis_summary(cursor, summary_params)
-
         # RUNS 테이블 상태 업데이트
         cursor.execute("UPDATE runs SET optimization_status = 'ANALYZED' WHERE run_id = :run_id", {"run_id": run_id})
 
         conn.commit() # 분석 결과 저장 및 상태 업데이트 커밋
 
         return jsonify({"message": "계획 저장 및 LLM 분석 완료", "run_id": run_id}), 200
-
     except ValueError as ve: # 데이터 형식 오류 등
         if conn: conn.rollback()
         return jsonify({"error": "데이터 처리 오류", "details": str(ve)}), 400
@@ -228,7 +303,7 @@ def save_plan_and_analyze():
 
 # --- API #3: 결과 조회 API ---
 # (이전 제안과 거의 동일, 분석 결과만 가져오도록 명확화)
-@app.route('/api/get-results/<string:run_id>', methods=['GET'])
+@llm_bp.route('/api/get-results/<string:run_id>', methods=['GET'])
 def get_results(run_id):
     """
     주어진 run_id에 해당하는 저장된 계획 정보와 LLM 분석 결과를 DB에서 조회하여 반환합니다.
@@ -236,7 +311,7 @@ def get_results(run_id):
     """
     conn = None
     try:
-        conn = test_db_connection()
+        conn = get_db_connection()
         if conn is None: # 연결 실패 시 처리 (get_db_connection이 None 반환 시)
              raise ConnectionError("DB 연결 객체를 가져오지 못했습니다.")
         cursor = conn.cursor()

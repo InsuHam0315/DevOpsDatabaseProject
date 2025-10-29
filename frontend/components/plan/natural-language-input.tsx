@@ -1,4 +1,3 @@
-// frontend/components/plan/natural-language-input.tsx
 'use client';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -6,15 +5,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Brain, FileText, CheckCircle, AlertCircle } from 'lucide-react';
+import { Brain, FileText, CircleCheck as CheckCircle, CircleAlert as AlertCircle } from 'lucide-react';
 import { OptimizationRequest } from '@/lib/types';
 
-
 interface NaturalLanguageInputProps {
-  onParsed: (request: OptimizationRequest | null) => void; // 💡 null 허용 추가
+  onParsed: (request: OptimizationRequest | null) => void;
 }
 
-// 💡 백엔드 API 기본 URL (환경 변수로 관리하는 것이 좋음)
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
 
 export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputProps) {
@@ -63,75 +60,73 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
     }
   };
 
-  const exampleInput = `내일(1월 15일) 전기차 2대로 군산A구역과 B구역에 배송하고 싶어.
-A구역은 300kg 배송하고 9시부터 12시까지 가능해.
-B구역은 400kg이고 8시30분부터 12시까지야.
-가장 친환경적인 경로로 최적화해줘.`;
+  const exampleInput = `오늘 V001 차량으로 군산 국제여객터미널에서에서 출발해서 부산A에 150kg 배송할거고 내일은 V002 차량으로 서울A에서 출발해서 대전 신세계백화점으로 100kg 배송할거야.`;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {/* Input Section */}
       <div className="space-y-4">
-        {/* ... (Textarea 및 예시 입력 버튼은 동일) ... */}
-         <div className="space-y-2">
-           <label htmlFor="natural-input" className="text-sm font-medium">
-             자연어 입력
-           </label>
-           <Textarea
-             id="natural-input"
-             placeholder="배송 요구사항을 자연스럽게 입력하세요..."
-             className="min-h-[200px] resize-none"
-             value={input}
-             onChange={(e) => setInput(e.target.value)}
-           />
-         </div>
-
-         <div className="flex gap-2">
-           <Button
-             onClick={() => setInput(exampleInput)}
-             variant="outline"
-             size="sm"
-           >
-             예시 입력
-           </Button>
-           <Button
-             onClick={handleParseInput}
-             disabled={!input.trim() || isProcessing}
-             className="flex items-center gap-2"
-           >
-            {/* ... (로딩 상태 표시는 동일) ... */}
-             {isProcessing ? (
-               <>
-                 <div className="w-4 h-4 border-2 border-current border-t-transparent animate-spin rounded-full" />
-                 파싱 중...
-               </>
-             ) : (
-               <>
-                 <Brain className="w-4 h-4" />
-                 {/* 💡 버튼 텍스트 변경 */}
-                 요청 파싱 (LLM)
-               </>
-             )}
-           </Button>
-         </div>
-        {/* 💡 오류 메시지 표시 */}
+        <div className="space-y-2">
+          <label htmlFor="natural-input" className="text-sm font-medium">
+            자연어 입력
+          </label>
+          <Textarea
+            id="natural-input"
+            placeholder="배송 요구사항을 자연스럽게 입력하세요..."
+            className="min-h-[200px] resize-none"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex gap-2">
+          <Button 
+            onClick={() => setInput(exampleInput)}
+            variant="outline" 
+            size="sm"
+          >
+            예시 입력
+          </Button>
+          <Button 
+            onClick={handleParseInput}
+            disabled={!input.trim() || isProcessing}
+            className="flex items-center gap-2"
+          >
+            {isProcessing ? (
+              <>
+                <div className="w-4 h-4 border-2 border-current border-t-transparent animate-spin rounded-full" />
+                파싱 중...
+              </>
+            ) : (
+              <>
+                <Brain className="w-4 h-4" />
+                요청
+              </>
+            )}
+          </Button>
+        </div>
         {error && (
           <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-lg flex items-center gap-2">
             <AlertCircle className="w-4 h-4" />
             {error}
           </div>
         )}
+        {input && (
+          <div className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+            <p className="font-medium mb-1">💡 입력 분석:</p>
+            <p>LLM이 자연어를 구조화된 JSON으로 변환합니다</p>
+          </div>
+        )}
       </div>
 
       {/* Preview Section */}
       <Card>
-        {/* ... (CardHeader는 동일) ... */}
-         <CardHeader className="pb-3">
-           <CardTitle className="flex items-center gap-2 text-lg">
-             <FileText className="w-5 h-5" />
-             JSON 미리보기
-           </CardTitle>
-         </CardHeader>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <FileText className="w-5 h-5" />
+            JSON 미리보기
+          </CardTitle>
+        </CardHeader>
         <CardContent>
           {/* 💡 로딩 중 표시 추가 */}
           {isProcessing ? (
@@ -192,9 +187,6 @@ B구역은 400kg이고 8시30분부터 12시까지야.
                           <span className="font-medium">{job.sector_id}</span>
                           <Badge variant="outline">{job.demand_kg}kg</Badge>
                         </div>
-                        <p className="text-muted-foreground text-xs">
-                          {job.tw_start} ~ {job.tw_end} | 우선순위: {job.priority}
-                        </p>
                       </div>
                     ))}
                   </div>

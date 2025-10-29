@@ -2,19 +2,12 @@ import oracledb
 # --------------------------------LLM 저장 파트----------------------------------------
 # --- 2. RUNS 테이블 저장 함수 ---
 def save_run(cursor: oracledb.Cursor, run_params: dict):
-    """
-    RUNS 테이블에 새로운 실행 정보를 저장합니다.
-    run_params 딕셔너리는 'run_id', 'run_date_str', 'depot_lat', 'depot_lon',
-                           'natural_language_input', 'optimization_status' 키를 포함해야 합니다.
-    """
     try:
         sql = """
             INSERT INTO RUNS (
-                RUN_ID, RUN_DATE, DEPOT_LAT, DEPOT_LON,
-                NATURAL_LANGUAGE_INPUT, OPTIMIZATION_STATUS, CREATED_AT
+                RUN_ID, RUN_DATE, DEPOT_LAT, DEPOT_LON, OPTIMIZATION_STATUS, NATURAL_LANGUAGE_INPUT
             ) VALUES (
-                :run_id, TO_DATE(:run_date_str, 'YYYY-MM-DD'), :depot_lat, :depot_lon,
-                :natural_language_input, :optimization_status, SYSTIMESTAMP
+                :run_id, TO_DATE(:run_date_str, 'YYYY-MM-DD'), :depot_lat, :depot_lon, :optimization_status, :natural_language_input
             )
         """
         cursor.execute(sql, run_params)
@@ -25,11 +18,6 @@ def save_run(cursor: oracledb.Cursor, run_params: dict):
 
 # --- 3. JOBS 테이블 저장 함수 ---
 def save_job(cursor: oracledb.Cursor, job_params: dict) -> int:
-    """
-    JOBS 테이블에 새로운 작업 정보를 저장하고, 생성된 JOB_ID를 반환합니다.
-    job_params 딕셔너리는 'run_id', 'sector_id', 'address', 'latitude', 'longitude',
-                           'demand_kg', 'tw_start_str', 'tw_end_str', 'priority', 'run_date_str' 키를 포함해야 합니다.
-    """
     try:
         # JOB_ID를 반환받기 위한 변수 설정
         new_job_id_var = cursor.var(oracledb.NUMBER)
@@ -39,14 +27,9 @@ def save_job(cursor: oracledb.Cursor, job_params: dict) -> int:
         # (주의: 시간 형식이 'HH24:MI'가 아닐 경우 형식 문자열 수정 필요)
         sql = """
             INSERT INTO JOBS (
-                RUN_ID, SECTOR_ID, ADDRESS, LATITUDE, LONGITUDE, DEMAND_KG,
-                TW_START, TW_END, PRIORITY
-                -- JOB_ID는 트리거에 의해 자동 생성됨
+                RUN_ID, SECTOR_ID, ADDRESS, LATITUDE, LONGITUDE, DEMAND_KG
             ) VALUES (
-                :run_id, :sector_id, :address, :latitude, :longitude, :demand_kg,
-                TO_TIMESTAMP(:run_date_str || ' ' || :tw_start_str, 'YYYY-MM-DD HH24:MI'),
-                TO_TIMESTAMP(:run_date_str || ' ' || :tw_end_str, 'YYYY-MM-DD HH24:MI'),
-                :priority
+                :run_id, :sector_id, :address, :lat, :lon, :demand_kg
             )
             RETURNING JOB_ID INTO :new_job_id
         """

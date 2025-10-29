@@ -1,4 +1,3 @@
-// frontend/app/plan/page.tsx
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -133,7 +132,7 @@ export default function PlanPage() {
                            <span>처리 중...</span>
                         </>
                       ) : (
-                        "최적화 실행 (LLM 분석)" // 💡 버튼 텍스트 변경
+                        "최적화 실행" // 💡 버튼 텍스트 변경
                       )}
                     </button>
                   </div>
