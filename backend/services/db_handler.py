@@ -107,3 +107,66 @@ def save_llm_analysis_summary(cursor: oracledb.Cursor, summary_params: dict):
         print(f"❌ RUN_SUMMARY 테이블 저장 실패: {e}")
         raise
 # --------------------------------------------------------------------------------------------
+# --- 읽기 전용 헬퍼 추가 ------------------------------------
+def _connect():
+    return oracledb.connect(
+        user=config.DB_USER,
+        password=config.DB_PASSWORD,
+        dsn=config.DB_DSN
+    )
+
+def get_settings_from_db():
+    """
+    SETTINGS 테이블에서 (KEY, VALUE) 전체를 반환.
+    예: [("alpha_load","0.1"), ("beta_grade","0.03"), ...]
+    """
+    sql = "SELECT KEY, VALUE FROM SETTINGS"
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+    return rows  # List[Tuple[str, str]]
+
+def get_congestion_factors_from_db(hour: int):
+    """
+    CONGESTION_INDEX에서 주어진 시각(hour)의 (TF, IDLE_F)을 반환한다.
+    실제 컬럼명은 TIME_FACTOR / IDLE_FACTOR 이므로 매핑해서 리턴.
+    """
+    sql = """
+        SELECT TIME_FACTOR, IDLE_FACTOR
+          FROM CONGESTION_INDEX
+         WHERE HOUR_OF_DAY = :h
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, h=hour)
+            row = cur.fetchone()   # (time_factor, idle_factor) or None
+            if not row:
+                return None
+            time_factor, idle_factor = row
+            # co2_calculator가 기대하는 (tf, idle_f) 형태로 변환
+            return (float(time_factor), float(idle_factor))
+
+def get_vehicle_ef_from_db(vehicle_type: str):
+    """
+    EMISSION_FACTORS에서 차량 타입별 고정 배출계수/공회전 계수 가져오기.
+    반환: {'ef_gpkm': float, 'idle_gps': float, 'fuel_type': str} 또는 None
+    """
+    sql = """
+        SELECT CO2_GPKM, IDLE_GPS, FUEL_TYPE
+          FROM EMISSION_FACTORS
+         WHERE LOWER(VEHICLE_TYPE) = LOWER(:vtype)
+         FETCH FIRST 1 ROWS ONLY
+    """
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, vtype=vehicle_type)
+            row = cur.fetchone()
+            if not row:
+                return None
+            co2_gpkm, idle_gps, fuel_type = row
+            return {
+                "ef_gpkm": float(co2_gpkm) if co2_gpkm is not None else None,
+                "idle_gps": float(idle_gps) if idle_gps is not None else None,
+                "fuel_type": fuel_type
+            }
