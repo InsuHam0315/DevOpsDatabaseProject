@@ -1,0 +1,12 @@
+devopsdb_high = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.ap-chuncheon-1.oraclecloud.com))(connect_data=(service_name=g6bb91f4b81fb17_devopsdb_high.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+devopsdb_low = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.ap-chuncheon-1.oraclecloud.com))(connect_data=(service_name=g6bb91f4b81fb17_devopsdb_low.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+devopsdb_medium = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.ap-chuncheon-1.oraclecloud.com))(connect_data=(service_name=g6bb91f4b81fb17_devopsdb_medium.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+devopsdb_tp = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.ap-chuncheon-1.oraclecloud.com))(connect_data=(service_name=g6bb91f4b81fb17_devopsdb_tp.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+devopsdb_tpurgent = (description= (retry_count=20)(retry_delay=3)(address=(protocol=tcps)(port=1522)(host=adb.ap-chuncheon-1.oraclecloud.com))(connect_data=(service_name=g6bb91f4b81fb17_devopsdb_tpurgent.adb.oraclecloud.com))(security=(ssl_server_dn_match=yes)))
+
+
+
