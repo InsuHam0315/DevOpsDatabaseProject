@@ -51,25 +51,7 @@ export default function Header() {
             ))}
           </nav>
 
-          {/* KPI Summary */}
-          <div className="hidden lg:flex items-center gap-4 ml-auto">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg">
-              <RouteIcon className="w-4 h-4 text-blue-600" />
-              <span className="text-sm font-medium text-blue-900">{kpis.total_distance_km}km</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg">
-              <Zap className="w-4 h-4 text-green-600" />
-              <span className="text-sm font-medium text-green-900">{kpis.total_co2_kg}kg CO₂</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-lg">
-              <Clock className="w-4 h-4 text-purple-600" />
-              <span className="text-sm font-medium text-purple-900">{Math.floor(kpis.total_time_min / 60)}h {kpis.total_time_min % 60}m</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg">
-              <TrendingUp className="w-4 h-4 text-emerald-600" />
-              <span className="text-sm font-medium text-emerald-900">{kpis.saving_percent}%</span>
-            </div>
-          </div>
+          {/* KPI Summary moved to dashboard */}
 
           {/* User Info & Logout */}
           {isAuthenticated && (
