@@ -184,3 +184,114 @@ def get_vehicle_ef_from_db(vehicle_type: str):
                 "idle_gps": float(idle_gps) if idle_gps is not None else None,
                 "fuel_type": fuel_type
             }
+
+# ---------------------------- 최적화/저장 확장 ----------------------------
+def get_jobs_by_run(cursor: oracledb.Cursor, run_id: str):
+    """
+    지정한 run_id의 JOBS 목록을 단순 조회합니다.
+    반환: List[dict]
+    """
+    cursor.execute(
+        """
+        SELECT JOB_ID, RUN_ID, SECTOR_ID, ADDRESS, LATITUDE, LONGITUDE, DEMAND_KG,
+               TO_CHAR(TW_START, 'YYYY-MM-DD HH24:MI') AS TW_START,
+               TO_CHAR(TW_END, 'YYYY-MM-DD HH24:MI') AS TW_END,
+               PRIORITY
+          FROM JOBS
+         WHERE RUN_ID = :run_id
+         ORDER BY JOB_ID
+        """,
+        {"run_id": run_id}
+    )
+    rows = cursor.fetchall()
+    cols = [c[0].lower() for c in cursor.description]
+    return [dict(zip(cols, r)) for r in rows]
+
+def bulk_insert_assignments(cursor: oracledb.Cursor, assignments: list):
+    """
+    ASSIGNMENTS에 다건 삽입. assignments의 각 항목은 테이블 컬럼 키를 포함해야 함.
+    필수 키: run_id, route_option_name, vehicle_id, step_order, start_job_id, end_job_id,
+            distance_km, co2_g, load_kg, time_min, avg_gradient_pct, congestion_factor
+    """
+    if not assignments:
+        return 0
+    sql = (
+        """
+        INSERT INTO ASSIGNMENTS (
+            RUN_ID, ROUTE_OPTION_NAME, VEHICLE_ID, STEP_ORDER, START_JOB_ID, END_JOB_ID,
+            DISTANCE_KM, CO2_G, LOAD_KG, TIME_MIN, AVG_GRADIENT_PCT, CONGESTION_FACTOR
+        ) VALUES (
+            :run_id, :route_option_name, :vehicle_id, :step_order, :start_job_id, :end_job_id,
+            :distance_km, :co2_g, :load_kg, :time_min, :avg_gradient_pct, :congestion_factor
+        )
+        """
+    )
+    cursor.executemany(sql, assignments)
+    return cursor.rowcount or 0
+
+def insert_assignment_gradients(cursor: oracledb.Cursor, gradients: list):
+    """
+    ASSIGNMENT_GRADIENTS에 다건 삽입. 선택 사용.
+    필수 키: assign_id, segment_order, start_km, end_km, avg_grade_pct, note
+    """
+    if not gradients:
+        return 0
+    sql = (
+        """
+        INSERT INTO ASSIGNMENT_GRADIENTS (
+            ASSIGN_ID, SEGMENT_ORDER, START_KM, END_KM, AVG_GRADE_PCT, NOTE
+        ) VALUES (
+            :assign_id, :segment_order, :start_km, :end_km, :avg_grade_pct, :note
+        )
+        """
+    )
+    cursor.executemany(sql, gradients)
+    return cursor.rowcount or 0
+
+def update_run_summary(cursor: oracledb.Cursor, run_id: str, summary: dict):
+    """
+    RUN_SUMMARY 업데이트 또는 없으면 삽입(UPSERT 유사 처리).
+    summary 키: total_distance_km, total_co2_g, total_time_min, saving_pct, route_option_name, llm_explanation(선택)
+    """
+    # 존재 여부 확인
+    cursor.execute("SELECT SUMMARY_ID FROM RUN_SUMMARY WHERE RUN_ID = :run_id", {"run_id": run_id})
+    row = cursor.fetchone()
+    params = {
+        "run_id": run_id,
+        "route_option_name": summary.get("route_option_name"),
+        "total_distance_km": summary.get("total_distance_km", 0) or 0,
+        "total_co2_g": summary.get("total_co2_g", 0) or 0,
+        "total_time_min": summary.get("total_time_min", 0) or 0,
+        "saving_pct": summary.get("saving_pct", 0) or 0,
+        "llm_explanation": summary.get("llm_explanation"),
+    }
+    if row:
+        sql = (
+            """
+            UPDATE RUN_SUMMARY
+               SET ROUTE_OPTION_NAME = :route_option_name,
+                   TOTAL_DISTANCE_KM = :total_distance_km,
+                   TOTAL_CO2_G = :total_co2_g,
+                   TOTAL_TIME_MIN = :total_time_min,
+                   SAVING_PCT = :saving_pct,
+                   LLM_EXPLANATION = COALESCE(:llm_explanation, LLM_EXPLANATION)
+             WHERE RUN_ID = :run_id
+            """
+        )
+        if params.get('llm_explanation'):
+            cursor.setinputsizes(llm_explanation=oracledb.DB_TYPE_CLOB)
+        cursor.execute(sql, params)
+    else:
+        sql = (
+            """
+            INSERT INTO RUN_SUMMARY (
+                RUN_ID, ROUTE_OPTION_NAME, TOTAL_DISTANCE_KM, TOTAL_CO2_G, TOTAL_TIME_MIN, SAVING_PCT, LLM_EXPLANATION
+            ) VALUES (
+                :run_id, :route_option_name, :total_distance_km, :total_co2_g, :total_time_min, :saving_pct, :llm_explanation
+            )
+            """
+        )
+        if params.get('llm_explanation'):
+            cursor.setinputsizes(llm_explanation=oracledb.DB_TYPE_CLOB)
+        cursor.execute(sql, params)
+    return True

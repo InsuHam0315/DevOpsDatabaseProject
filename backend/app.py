@@ -8,7 +8,11 @@ from google import genai
 import requests # LLM API 오류 처리를 위해 사용
 
 # db_handler.py 에서 DB 관련 함수들을 가져옵니다.
-from services.db_handler import test_db_connection, save_run, save_job, save_llm_analysis_summary, get_db_connection
+from services.db_handler import save_run, save_job, get_db_connection
+from services.db_handler import get_settings_from_db, get_jobs_by_run, bulk_insert_assignments, update_run_summary
+from services.optimizer import optimize_plan
+from services.xai import explain_routes
+from services.llm_adapter import adapt_llmpart_json
 
 app = Flask(__name__)
 CORS(app)
@@ -117,7 +121,9 @@ def save_plan_and_analyze():
     if request.method == 'OPTIONS':
         return jsonify(success=True)
         
-    plan_data = request.json
+    # LLMpart 포맷을 표준 포맷으로 변환
+    plan_raw = request.json
+    plan_data = adapt_llmpart_json(plan_raw) if plan_raw else None
     if not plan_data:
         return jsonify({"error": "계획 데이터(JSON)가 필요합니다."}), 400
 
@@ -155,14 +161,14 @@ def save_plan_and_analyze():
             job_params = {
                 "run_id": run_id,
                 # 'from'과 'to'를 주소로 사용한다고 가정
-                "sector_id": f"{job.get('from')}_{job.get('to')}", # 임시 섹터 ID
-                "address": f"{job.get('from')}에서 {job.get('to')}", 
-                "latitude": job.get('lat') if job.get('lat') is not None else 0,
-                "longitude": job.get('lon') if job.get('lon') is not None else 0,
-                "demand_kg": job.get('weight'), # weight를 demand_kg으로 사용
-                "tw_start_str": job.get('tw_start', '00:00'),
-                "tw_end_str": job.get('tw_end', '23:59'),
-                "priority": job.get('priority', 1),
+                "sector_id": job.get('sector_id'),
+                "address": job.get('address'),
+                "latitude": job.get('lat'),
+                "longitude": job.get('lon'),
+                "demand_kg": job.get('demand_kg'),
+                "tw_start_str": job.get('tw_start', '09:00'),
+                "tw_end_str": job.get('tw_end', '17:00'),
+                "priority": job.get('priority', 2),
                 "run_date_str": run_date_str
             }
             # 👇 db_handler.py에 구현되어 있어야 합니다.
@@ -171,7 +177,35 @@ def save_plan_and_analyze():
 
         conn.commit() # RUNS, JOBS 저장 완료
 
-        # --- 3. LLM 분석/설명 생성 ---
+        # --- 3. 최적화 실행 (MVP) ---
+        # 설정/파라미터 로드
+        settings_rows = get_settings_from_db()
+        settings = {k: float(v) if v is not None else 0.0 for k, v in settings_rows}
+        jobs_rows = get_jobs_by_run(cursor, run_id)
+
+        # depot 좌표
+        depot_lat = run_params["depot_lat"]
+        depot_lon = run_params["depot_lon"]
+
+        # vehicles: LLM 파싱 결과를 그대로 사용(MVP), 없으면 1대 가정
+        vehicles = plan_data.get('vehicles', []) or [{"id": "VEHICLE_1", "type": "GENERIC"}]
+
+        # optimizer 호출
+        opt = optimize_plan(
+            run_id=run_id,
+            run_date=run_date_str,
+            vehicles=vehicles,
+            jobs=jobs_rows,
+            settings=settings,
+            depot=(depot_lat, depot_lon)
+        )
+
+        # 결과 저장: ASSIGNMENTS, RUN_SUMMARY(초기)
+        bulk_insert_assignments(cursor, opt.get('assignments', []))
+        summary_dict = opt.get('summary', {})
+        update_run_summary(cursor, run_id, summary_dict)
+
+        # --- 4. LLM 기반 간단 분석/요약 및 XAI 설명 생성 ---
         vehicle_count = sum(v.get('count', 0) for v in plan_data.get('vehicles', []))
         job_count = len(jobs_data)
         total_demand = sum(job.get('weight', 0) for job in jobs_data) # weight 기준
@@ -198,24 +232,29 @@ def save_plan_and_analyze():
             print(f"LLM 분석 생성 실패: {llm_err}")
             llm_explanation = "LLM 분석을 생성하는 데 실패했습니다."
 
-        # --- 4. LLM 분석 결과 저장 ---
-        summary_params = {
-            "run_id": run_id,
-            "llm_explanation": llm_explanation,
-            "total_distance_km": 0,
-            "total_co2_g": 0,
-            "total_time_min": 0,
-            "saving_pct": 0
-        }
-        # 👇 db_handler.py에 구현되어 있어야 합니다.
-        save_llm_analysis_summary(cursor, summary_params)
+        # XAI 설명 생성(MVP)
+        explain_routes(opt.get('assignments', []), settings)
+
+        # RUN_SUMMARY에 LLM 설명 업데이트(기존 값과 합침)
+        summary_for_update = dict(summary_dict)
+        summary_for_update["llm_explanation"] = (llm_explanation or "")
+        update_run_summary(cursor, run_id, summary_for_update)
 
         # RUNS 테이블 상태 업데이트
-        cursor.execute("UPDATE runs SET optimization_status = 'ANALYZED' WHERE run_id = :run_id", {"run_id": run_id})
+        cursor.execute("UPDATE runs SET optimization_status = 'OPTIMIZED' WHERE run_id = :run_id", {"run_id": run_id})
 
         conn.commit() # 분석 결과 저장 및 상태 업데이트 커밋
 
-        return jsonify({"message": "계획 저장 및 LLM 분석 완료", "run_id": run_id}), 200
+        return jsonify({
+            "message": "계획 저장 및 최적화+분석 완료",
+            "run_id": run_id,
+            "kpis": {
+                "total_distance_km": summary_dict.get('total_distance_km', 0),
+                "total_co2_kg": (summary_dict.get('total_co2_g', 0) or 0) / 1000.0,
+                "total_time_min": summary_dict.get('total_time_min', 0),
+                "saving_percent": summary_dict.get('saving_pct', 0),
+            }
+        }), 200
 
     except oracledb.Error as db_err:
         if conn: conn.rollback()
