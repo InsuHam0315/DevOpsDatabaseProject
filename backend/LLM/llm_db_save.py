@@ -27,9 +27,9 @@ def save_job(cursor: oracledb.Cursor, job_params: dict) -> int:
         # (주의: 시간 형식이 'HH24:MI'가 아닐 경우 형식 문자열 수정 필요)
         sql = """
             INSERT INTO JOBS (
-                RUN_ID, SECTOR_ID, ADDRESS, LATITUDE, LONGITUDE, DEMAND_KG
+                RUN_ID, SECTOR_ID, ADDRESS, LATITUDE, LONGITUDE, DEMAND_KG, TW_START, TW_END
             ) VALUES (
-                :run_id, :sector_id, :address, :lat, :lon, :demand_kg
+                :run_id, :sector_id, :address, :lat, :lon, :demand_kg, TO_TIMESTAMP(:tw_start, 'HH24:MI'), TO_TIMESTAMP(:tw_end, 'HH24:MI')
             )
             RETURNING JOB_ID INTO :new_job_id
         """
