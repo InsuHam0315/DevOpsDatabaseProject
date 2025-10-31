@@ -167,6 +167,7 @@ DB_DSN=your_oracle_dsn
 
 OPENROUTER_API_KEY=""
 OPENROUTER_API_URL=""
+REST_API_KEY=""
 ```
 
 ## 🤝 기여하기
