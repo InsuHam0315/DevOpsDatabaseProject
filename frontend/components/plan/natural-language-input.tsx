@@ -18,15 +18,15 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
   const [input, setInput] = useState('');
   const [parsedResult, setParsedResult] = useState<OptimizationRequest | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<string | null>(null); // 오류 상태 추가
+  const [error, setError] = useState<string | null>(null);
 
   const handleParseInput = async () => {
     if (!input.trim()) return;
 
     setIsProcessing(true);
-    setError(null); // 오류 초기화
-    setParsedResult(null); // 이전 결과 초기화
-    onParsed(null); // 부모 컴포넌트에도 초기화 알림
+    setError(null);
+    setParsedResult(null);
+    onParsed(null);
 
     try {
       const response = await fetch(`${API_BASE_URL}/api/parse-natural-language`, {
@@ -44,17 +44,12 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
 
       const result: OptimizationRequest = await response.json();
       setParsedResult(result);
-      onParsed(result); // 성공 시 부모 컴포넌트에 파싱 결과 전달
-      // 💡 성공 알림 (선택 사항)
-      // toast({ title: "파싱 성공", description: "요청 내용이 JSON으로 변환되었습니다." });
-
+      onParsed(result);
     } catch (err: any) {
       console.error("파싱 오류:", err);
       setError(err.message || "자연어 처리 중 오류가 발생했습니다.");
       setParsedResult(null);
       onParsed(null);
-      // 💡 오류 알림 (선택 사항)
-      // toast({ variant: "destructive", title: "파싱 실패", description: err.message });
     } finally {
       setIsProcessing(false);
     }
@@ -128,18 +123,17 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* 💡 로딩 중 표시 추가 */}
           {isProcessing ? (
              <div className="text-center py-8 text-muted-foreground">
                  <div className="w-8 h-8 mx-auto border-4 border-primary border-t-transparent animate-spin rounded-full mb-3" />
                  <p>LLM이 요청을 분석하고 있습니다...</p>
              </div>
-          ) : !parsedResult && !error ? ( // 💡 초기 상태 또는 오류 없을 때만 기본 메시지
+          ) : !parsedResult && !error ? (
             <div className="text-center py-8 text-muted-foreground">
               <Brain className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>자연어 입력 후 파싱 버튼을 클릭하세요</p>
             </div>
-          ) : error ? ( // 💡 오류 발생 시 메시지
+          ) : error ? (
              <div className="text-center py-8 text-destructive">
                  <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
                  <p>파싱 중 오류가 발생했습니다.</p>
@@ -147,8 +141,6 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
              </div>
           ) : parsedResult ? ( 
             (() => {
-              // ⭐ [수정] 
-              // 모든 'runs'를 순회하며 총 'job' 개수를 계산합니다.
               const totalJobCount = parsedResult.runs?.reduce(
                 (acc, run) => acc + (run.jobs?.length || 0), 0
               ) || 0;
@@ -160,63 +152,44 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
                     <CheckCircle className="w-4 h-4 text-green-600" />
                     <span className="text-green-600 font-medium">파싱 성공</span>
                     <Badge variant="secondary" className="ml-auto">
-                      {/* ⭐ [수정] totalJobCount 변수를 사용합니다. */}
                       {totalJobCount}개 작업 / {parsedResult.runs.length}개 운행
                     </Badge>
                   </div>
                   <Separator />
 
-                  {/* Parsed Data Summary */}
-                  <div className="space-y-3">
-                    <div>
-                      <p className="text-sm font-medium mb-1">실행 날짜</p>
-                      <Badge variant="outline">{parsedResult.run_date}</Badge>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-medium mb-1">
-                        차량 ({parsedResult.vehicles.length}대)
-                      </p>
-                      <div className="flex gap-1 flex-wrap">
-                        {parsedResult.vehicles.map((vehicle) => (
-                          <Badge key={vehicle} variant="secondary">{vehicle}</Badge>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* ⭐ [수정] "작업 목록" 렌더링 로직 (중첩 구조 반영) */}
-                    <div>
-                      <p className="text-sm font-medium mb-2">운행별 작업 목록</p>
-                      <div className="space-y-3 max-h-40 overflow-y-auto p-1">
-                        {parsedResult.runs.map((run, runIndex) => (
-                          <div key={runIndex} className="bg-muted p-2 rounded">
-                            <p className="text-xs font-semibold text-muted-foreground truncate" title={run.depot_address}>
-                              출발 {runIndex + 1}: {run.depot_address || '주소 불명'}
-                            </p>
-                            <Separator className="my-1.5" />
-                            <div className="space-y-1">
-                              {run.jobs.map((job, jobIndex) => (
-                                <div key={jobIndex} className="text-sm">
-                                  <div className="flex justify-between items-start">
-                                    <span className="font-medium" title={job.address}>
-                                      {/* 💡 주소 또는 sector_id 표시 */}
-                                      {job.address || job.sector_id || '도착지 불명'}
-                                    </span>
-                                    <Badge variant="outline">{job.demand_kg}kg</Badge>
-                                  </div>
+                  {/* Runs List */}
+                  <div>
+                    <p className="text-sm font-medium mb-2">운행별 작업 목록</p>
+                    <div className="space-y-3 max-h-40 overflow-y-auto p-1">
+                      {parsedResult.runs.map((run, runIndex) => (
+                        <div key={runIndex} className="bg-muted p-2 rounded">
+                          <p className="text-xs font-semibold text-muted-foreground truncate" title={run.depot_address}>
+                            출발 {runIndex + 1}: {run.depot_address || '주소 불명'}
+                          </p>
+                          <Separator className="my-1.5" />
+                          <div className="space-y-1">
+                            {run.jobs.map((job, jobIndex) => (
+                              <div key={jobIndex} className="text-sm">
+                                <div className="flex justify-between items-start">
+                                  <span className="font-medium" title={job.address}>
+                                    {job.address || job.sector_id || '도착지 불명'}
+                                  </span>
+                                  <Badge variant="outline">{job.demand_kg}kg</Badge>
                                 </div>
-                              ))}
-                              {run.jobs.length === 0 && (
-                                <p className="text-xs text-center text-muted-foreground">
-                                  이 운행에 등록된 작업이 없습니다.
-                                </p>
-                              )}
-                            </div>
+                              </div>
+                            ))}
+                            {run.jobs.length === 0 && (
+                              <p className="text-xs text-center text-muted-foreground">
+                                이 운행에 등록된 작업이 없습니다.
+                              </p>
+                            )}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
+
+                  {/* Raw JSON View */}
                   <details className="group">
                     <summary className="cursor-pointer text-sm font-medium">원본 JSON 보기</summary>
                     <pre className="mt-2 p-3 bg-slate-100 rounded text-xs overflow-x-auto">
@@ -226,13 +199,7 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
                 </div>
               );
             })()
-          ) : (
-            // 초기 상태 표시 (동일)
-            <div className="text-center py-8 text-muted-foreground">
-              <Brain className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>자연어 입력 후 파싱 버튼을 클릭하세요</p>
-            </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>

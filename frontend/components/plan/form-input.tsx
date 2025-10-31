@@ -25,11 +25,10 @@ export default function FormInput({ onSubmit }: FormInputProps) {
     jobs: [
       {
         sector_id: 'A',
-        date: '2024-01-15', 
+        date: '2024-01-15',
         demand_kg: 300,
         tw_start: '09:00',
-        tw_end: '12:00',
-        priority: 2
+        tw_end: '12:00'
       }
     ] as Partial<Job>[]
   });
@@ -50,9 +49,8 @@ export default function FormInput({ onSubmit }: FormInputProps) {
         sector_id: '',
         date: prev.run_date,
         demand_kg: 0,
-        tw_start: '09:00', 
-        tw_end: '17:00',
-        priority: 2
+        tw_start: '09:00',
+        tw_end: '17:00'
       }]
     }));
   };
@@ -84,8 +82,7 @@ export default function FormInput({ onSubmit }: FormInputProps) {
         sector_id: job.sector_id || '',
         demand_kg: job.demand_kg || 0,
         tw_start: job.tw_start || '09:00',
-        tw_end: job.tw_end || '17:00',
-        priority: job.priority || 2
+        tw_end: job.tw_end || '17:00'
       } as Job;
     }).filter(job => job.sector_id && job.demand_kg > 0);
 
@@ -240,8 +237,8 @@ export default function FormInput({ onSubmit }: FormInputProps) {
                         onChange={(e) => updateJob(index, 'tw_start', e.target.value)}
                       />
                     </div>
-                    
-                    <div>
+
+                    <div className="md:col-span-2">
                       <Label>종료 시간</Label>
                       <Input
                         type="time"
@@ -250,22 +247,6 @@ export default function FormInput({ onSubmit }: FormInputProps) {
                       />
                     </div>
                     
-                    <div>
-                      <Label>우선순위</Label>
-                      <Select
-                        value={String(job.priority || 2)}
-                        onValueChange={(value) => updateJob(index, 'priority', parseInt(value))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">높음 (1)</SelectItem>
-                          <SelectItem value="2">보통 (2)</SelectItem>
-                          <SelectItem value="3">낮음 (3)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </div>
                 </div>
               ))}

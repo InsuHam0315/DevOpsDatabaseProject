@@ -5,22 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Route, Car, MapPin, Clock, Zap, TrendingDown, Settings, Brain, ChartBar as BarChart3, Timer, Fuel } from 'lucide-react';
+import { Route, Car, MapPin, Clock, Zap, TrendingDown, Brain, Timer, Fuel } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import KakaoMapPlaceholder from '@/components/ui/kakao-map-placeholder';
 
 export default function RoutesPage() {
   const { routes, kpis, vehicles } = useStore();
-  const [showScenarioDialog, setShowScenarioDialog] = useState(false);
-  const [scenarioSettings, setScenarioSettings] = useState({
-    extra_vehicle: false,
-    extend_time_window: false,
-    priority_weight: 1.0
-  });
 
   const kpiCards = [
     {

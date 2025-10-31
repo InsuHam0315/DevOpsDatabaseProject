@@ -1,6 +1,6 @@
 # Eco Logistics Optimizer
 
-LLM을 활용한 친환경 물류 경로 최적화 시스템의 웹 프론트엔드 프로토타입입니다.
+LLM을 활용한 친환경 물류 경로 최적화 시스템입니다. LLM이 생성한 JSON 계획을 가공하여 최적화 엔진을 실행하고, 결과를 DB에 저장한 뒤 XAI 설명을 제공합니다.
 
 ## 🚀 기능 개요
 
@@ -89,14 +89,16 @@ Eco Logistics Optimizer/
 │   ├── config.py             # 환경 설정 관리
 │   ├── .env                  # DB 접속 정보 등 (Git 추적 안됨)
 │   ├── requirements.txt      # 파이썬 의존성 목록
-│   ├── optimizer/            # OR-Tools 최적화 엔진
-│   │   ├── __init__.py
-│   │   └── engine.py
 │   └── services/             # 핵심 비즈니스 로직
 │       ├── __init__.py
-│       │── call_llm.py       # LLM 호출 로직
-│       ├── db_handler.py     # 데이터베이스 핸들러
-│       └── co2_calculator.py # CO2 배출량 계산기
+│       ├── db_handler.py     # DB 핸들러(저장/조회 유틸)
+│       ├── llm_adapter.py    # LLMpart JSON → 표준 스키마 어댑터
+│       ├── optimizer.py      # 최적화(MVP) 실행기
+│       └── xai.py            # XAI 설명 생성(MVP)
+├── sql/                      # Oracle DDL/DML 스크립트
+│   ├── oracle_ddl_complete.sql         # 테이블 전체 생성
+│   ├── oracle_dml_fixed.sql            # 초기 시나리오/설정 DML
+│   └── oracle_dml_its_weather_seed.sql # ITS/날씨 샘플 DML
 └── .gitignore                # Git 무시 파일 (루트)
 └── README.md                 # 프로젝트 설명서 (현재 파일)
 ```
@@ -113,6 +115,8 @@ Eco Logistics Optimizer/
 - [x] 더미 데이터 기반 완전 시연 환경
 - [x] TypeScript 타입 안정성
 - [x] 접근성 고려 (aria-label, 키보드 네비게이션)
+ - [x] LLMpart JSON 어댑터 연결(백엔드)
+ - [x] 최적화(MVP) → DB 저장(ASSIGNMENTS/RUN_SUMMARY) → XAI(MVP) 흐름 연결
 
 ### 🚧 향후 개발 예정
 - [ ] 실제 LLM API 연동
@@ -169,6 +173,13 @@ OPENROUTER_API_KEY=""
 OPENROUTER_API_URL=""
 REST_API_KEY=""
 ```
+
+## 🧾 변경 기록(요약)
+
+- feat: LLMpart JSON 어댑터 추가(`services/llm_adapter.py`)
+- feat: 최적화/XAI 모듈 추가(`services/optimizer.py`, `services/xai.py`)
+- feat: DB 헬퍼 확장(ASSIGNMENTS/RUN_SUMMARY 저장, SETTINGS 조회)
+- feat: `app.py`에 LLMpart JSON → 저장 → 최적화 → XAI 흐름 연결
 
 ## 🤝 기여하기
 
