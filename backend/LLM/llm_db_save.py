@@ -29,7 +29,15 @@ def save_job(cursor: oracledb.Cursor, job_params: dict) -> int:
             INSERT INTO JOBS (
                 RUN_ID, SECTOR_ID, ADDRESS, LATITUDE, LONGITUDE, DEMAND_KG, TW_START, TW_END
             ) VALUES (
-                :run_id, :sector_id, :address, :lat, :lon, :demand_kg, TO_TIMESTAMP(:tw_start, 'HH24:MI'), TO_TIMESTAMP(:tw_end, 'HH24:MI')
+                :run_id, :sector_id, :address, :lat, :lon, :demand_kg, 
+                CASE 
+                    WHEN :tw_start IS NOT NULL THEN TO_TIMESTAMP(:run_date_str || ' ' || :tw_start, 'YYYY-MM-DD HH24:MI')
+                    ELSE NULL
+                END,
+                CASE 
+                    WHEN :tw_end IS NOT NULL THEN TO_TIMESTAMP(:run_date_str || ' ' || :tw_end, 'YYYY-MM-DD HH24:MI')
+                    ELSE NULL
+                END
             )
             RETURNING JOB_ID INTO :new_job_id
         """

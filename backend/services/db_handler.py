@@ -289,22 +289,3 @@ if __name__ == '__main__':
         print("\n❌ DB 연결 실패: config.py의 OCI 설정 정보를 확인하세요.")
     except Exception as e:
         print(f"\n❌ 테스트 중 오류 발생 (DB 데이터/스키마 오류 가능성): {e}")
-
-def get_available_vehicle_ids() -> List[str]:
-    """VEHICLES 테이블에서 모든 차량 ID를 조회하여 리스트로 반환합니다."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        vehicle_ids = []
-        try:
-            cursor.execute("SELECT VEHICLE_ID FROM VEHICLES ORDER BY VEHICLE_ID")
-            rows = cursor.fetchall()
-            vehicle_ids = [row[0] for row in rows]
-            return vehicle_ids
-        finally:
-            cursor.close()
-            conn.close()
-    except ConnectionError:
-        return [] # DB 연결 실패 시 빈 리스트 반환
-    except Exception:
-        return [] # 기타 오류 시 빈 리스트 반환

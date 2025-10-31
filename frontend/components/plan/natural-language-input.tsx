@@ -145,61 +145,87 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
                  <p>파싱 중 오류가 발생했습니다.</p>
                  <p className="text-xs mt-1">{error}</p>
              </div>
-          ) : parsedResult ? ( // 💡💡💡 parsedResult가 null이 아닐 때만 이 블록을 렌더링
-            <div className="space-y-4">
-              {/* Validation Status */}
-              <div className="flex items-center gap-2 text-sm">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span className="text-green-600 font-medium">파싱 성공</span>
-                {/* 💡 Optional chaining 사용 또는 parsedResult가 있음을 확신하므로 그대로 사용 가능 */}
-                <Badge variant="secondary" className="ml-auto">
-                  {parsedResult.jobs.length}개 작업
-                </Badge>
-              </div>
-              <Separator />
+          ) : parsedResult ? ( 
+            (() => {
+              // ⭐ [수정] 
+              // 모든 'runs'를 순회하며 총 'job' 개수를 계산합니다.
+              const totalJobCount = parsedResult.runs?.reduce(
+                (acc, run) => acc + (run.jobs?.length || 0), 0
+              ) || 0;
 
-              {/* Parsed Data Summary */}
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm font-medium mb-1">실행 날짜</p>
-                  {/* 💡 parsedResult가 null이 아님 */}
-                  <Badge variant="outline">{parsedResult.run_date}</Badge>
-                </div>
-
-                <div>
-                  {/* 💡 parsedResult가 null이 아님 */}
-                  <p className="text-sm font-medium mb-1">차량 ({parsedResult.vehicles.length}대)</p>
-                  <div className="flex gap-1 flex-wrap">
-                    {/* 💡 parsedResult가 null이 아님 */}
-                    {parsedResult.vehicles.map((vehicle) => (
-                      <Badge key={vehicle} variant="secondary">{vehicle}</Badge>
-                    ))}
+              return (
+                <div className="space-y-4">
+                  {/* Validation Status */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-green-600 font-medium">파싱 성공</span>
+                    <Badge variant="secondary" className="ml-auto">
+                      {/* ⭐ [수정] totalJobCount 변수를 사용합니다. */}
+                      {totalJobCount}개 작업 / {parsedResult.runs.length}개 운행
+                    </Badge>
                   </div>
-                </div>
+                  <Separator />
 
-                 <div>
-                  <p className="text-sm font-medium mb-2">작업 목록</p>
-                  <div className="space-y-2 max-h-32 overflow-y-auto">
-                    {/* 💡 parsedResult가 null이 아님 */}
-                    {parsedResult.jobs.map((job, index) => (
-                      <div key={index} className="bg-muted p-2 rounded text-sm">
-                        <div className="flex justify-between items-start mb-1">
-                          <span className="font-medium">{job.sector_id}</span>
-                          <Badge variant="outline">{job.demand_kg}kg</Badge>
-                        </div>
+                  {/* Parsed Data Summary */}
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-sm font-medium mb-1">실행 날짜</p>
+                      <Badge variant="outline">{parsedResult.run_date}</Badge>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-medium mb-1">
+                        차량 ({parsedResult.vehicles.length}대)
+                      </p>
+                      <div className="flex gap-1 flex-wrap">
+                        {parsedResult.vehicles.map((vehicle) => (
+                          <Badge key={vehicle} variant="secondary">{vehicle}</Badge>
+                        ))}
                       </div>
-                    ))}
+                    </div>
+
+                    {/* ⭐ [수정] "작업 목록" 렌더링 로직 (중첩 구조 반영) */}
+                    <div>
+                      <p className="text-sm font-medium mb-2">운행별 작업 목록</p>
+                      <div className="space-y-3 max-h-40 overflow-y-auto p-1">
+                        {parsedResult.runs.map((run, runIndex) => (
+                          <div key={runIndex} className="bg-muted p-2 rounded">
+                            <p className="text-xs font-semibold text-muted-foreground truncate" title={run.depot_address}>
+                              출발 {runIndex + 1}: {run.depot_address || '주소 불명'}
+                            </p>
+                            <Separator className="my-1.5" />
+                            <div className="space-y-1">
+                              {run.jobs.map((job, jobIndex) => (
+                                <div key={jobIndex} className="text-sm">
+                                  <div className="flex justify-between items-start">
+                                    <span className="font-medium" title={job.address}>
+                                      {/* 💡 주소 또는 sector_id 표시 */}
+                                      {job.address || job.sector_id || '도착지 불명'}
+                                    </span>
+                                    <Badge variant="outline">{job.demand_kg}kg</Badge>
+                                  </div>
+                                </div>
+                              ))}
+                              {run.jobs.length === 0 && (
+                                <p className="text-xs text-center text-muted-foreground">
+                                  이 운행에 등록된 작업이 없습니다.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm font-medium">원본 JSON 보기</summary>
+                    <pre className="mt-2 p-3 bg-slate-100 rounded text-xs overflow-x-auto">
+                      {JSON.stringify(parsedResult, null, 2)}
+                    </pre>
+                  </details>
                 </div>
-              </div>
-              <details className="group">
-                <summary className="cursor-pointer text-sm font-medium">원본 JSON 보기</summary>
-                <pre className="mt-2 p-3 bg-slate-100 rounded text-xs overflow-x-auto">
-                  {/* 💡 parsedResult가 null이 아님 */}
-                  {JSON.stringify(parsedResult, null, 2)}
-                </pre>
-              </details>
-            </div>
+              );
+            })()
           ) : (
             // 초기 상태 표시 (동일)
             <div className="text-center py-8 text-muted-foreground">

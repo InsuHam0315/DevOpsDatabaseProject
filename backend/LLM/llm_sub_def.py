@@ -1,21 +1,4 @@
 from services.db_handler import get_db_connection # 함수 이름 변경 및 추가
-
-def validate_sector_id(cursor, sector_id: str) -> str:
-    """sector_id가 유효한지 확인하고, 없으면 기본값 반환"""
-    if not sector_id:
-        return 'BUSAN_NEW_PORT'  # 기본값
-    
-    try:
-        cursor.execute("SELECT 1 FROM SECTORS WHERE SECTOR_ID = :sector_id", 
-                      {'sector_id': sector_id})
-        if cursor.fetchone():
-            return sector_id  # 유효한 sector_id
-        else:
-            print(f"⚠️ SECTOR_ID '{sector_id}'가 SECTORS 테이블에 없습니다. 기본값 사용")
-            return 'BUSAN_NEW_PORT'  # 기본값
-    except Exception as e:
-        print(f"SECTOR 확인 중 오류: {e}")
-        return 'BUSAN_NEW_PORT'  # 기본값
     
 def get_sector_coordinates(SECTOR_NAME: str) -> dict:
     """SECTOR 테이블에서 sector_name에 해당하는 좌표를 조회 - 디버깅 강화"""
@@ -34,13 +17,13 @@ def get_sector_coordinates(SECTOR_NAME: str) -> dict:
         
         # 2. 정확한 매칭 시도
         cursor.execute("""
-            SELECT LATITUDE, LONGITUDE FROM SECTORS WHERE SECTOR_NAME = :SECTOR_NAME
+            SELECT SECTOR_ID, LATITUDE, LONGITUDE FROM SECTORS WHERE SECTOR_NAME = :SECTOR_NAME
         """, {'SECTOR_NAME': cleaned_name})
         
         result = cursor.fetchone()
         if result:
-            print(f"✅ SECTOR 테이블에서 찾음: '{cleaned_name}' -> ({result[0]}, {result[1]})")
-            return {'LATITUDE': result[0], 'LONGITUDE': result[1]}
+            print(f"✅ SECTOR 테이블에서 찾음: '{cleaned_name}'")
+            return {'SECTOR_ID': result[0], 'LATITUDE': result[1], 'LONGITUDE': result[2]}
         else:
             print(f"❌ SECTOR 테이블에서 찾지 못함: '{cleaned_name}'")
             
@@ -66,14 +49,14 @@ def get_sector_coordinates(SECTOR_NAME: str) -> dict:
 
 def preprocess_with_sector_data(parsed_data: dict) -> dict:
     """SECTOR 테이블을 참조하여 좌표를 미리 채움"""
-    if not parsed_data.get('runs') or not parsed_data.get('jobs'):
+    if not parsed_data.get('runs'):
         return parsed_data
     
     # 출발지(runs) 좌표 채우기
     for run in parsed_data.get('runs', []):
+        # 1. 출발지(runs) 좌표 채우기
         depot_address = run.get('depot_address')
         if depot_address:
-            # 🔥 주소 문자열 그대로 SECTOR 테이블에서 검색
             coords = get_sector_coordinates(depot_address)
             if coords:
                 run['depot_lat'] = coords['LATITUDE']
@@ -83,16 +66,16 @@ def preprocess_with_sector_data(parsed_data: dict) -> dict:
                 print(f"ℹ️  SECTOR에 없는 출발지: {depot_address}")
     
     # 도착지(jobs) 좌표 채우기 - 주소 그대로 SECTOR 테이블에서 검색
-    for job in parsed_data.get('jobs', []):
-        address = job.get('address')
-        if address:
-            # 🔥 주소 문자열 그대로 SECTOR 테이블에서 검색
-            coords = get_sector_coordinates(address)
-            if coords:
-                job['lat'] = coords['LATITUDE']
-                job['lon'] = coords['LONGITUDE']
-                print(f"✅ SECTOR에서 도착지 좌표 채움: {address}")
-            else:
-                print(f"ℹ️  SECTOR에 없는 도착지: {address}")
+        for job in run.get('jobs', []):
+                address = job.get('address')
+                if address:
+                    coords = get_sector_coordinates(address)
+                    if coords:
+                        job['lat'] = coords['LATITUDE']
+                        job['lon'] = coords['LONGITUDE']
+                        job['sector_id'] = coords['SECTOR_ID']
+                        print(f"✅ SECTOR에서 도착지 좌표 채움: {address}")
+                    else:
+                        print(f"ℹ️  SECTOR에 없는 도착지: {address}")
     
     return parsed_data

@@ -91,7 +91,7 @@ def enhance_parsed_data_with_geocoding(parsed_data: dict) -> dict:
     """
     개선된 주소 좌표 변환 기능 - 이미 좌표가 있는 주소는 건너뛰기
     """
-    if not parsed_data.get('runs') or not parsed_data.get('jobs'):
+    if not parsed_data.get('runs'):
         return parsed_data
     
     geocoding_stats = {
@@ -105,15 +105,14 @@ def enhance_parsed_data_with_geocoding(parsed_data: dict) -> dict:
     # 1. 출발지(depot) 좌표 변환
     runs = parsed_data.get('runs', [])
     for run in runs:
+        # 1. 출발지(depot) 좌표 변환
         depot_address = run.get('depot_address')
 
         if run.get('depot_lat') is not None and run.get('depot_lon') is not None:
             print(f"  ✅ 출발지 좌표 이미 있음: {depot_address}")
-            continue
-
-        if depot_address:
+            # continue (이 continue는 job 처리를 건너뛰므로 제거)
+        elif depot_address:
             geocoding_stats["total_depots"] += 1
-            
             coords = get_coordinates_from_address_enhanced(depot_address)
             
             if coords.get('lat') and coords.get('lon'):
@@ -125,19 +124,19 @@ def enhance_parsed_data_with_geocoding(parsed_data: dict) -> dict:
                 geocoding_stats["failed_addresses"].append(f"출발지: {depot_address}")
     
     # 2. 도착지(jobs) 좌표 변환
-    jobs = parsed_data.get('jobs', [])
+    jobs = run.get('jobs', []) # ⬅️ 해당 run에 속한 jobs를 가져옴
     for job in jobs:
         address = job.get('address')
 
         if job.get('lat') is not None and job.get('lon') is not None:
             print(f"  ✅ 도착지 좌표 이미 있음: {address}")
             continue
-        
+            
         if address:
             geocoding_stats["total_jobs"] += 1
-            
+                
             coords = get_coordinates_from_address_enhanced(address)
-            
+                
             if coords.get('lat') and coords.get('lon'):
                 job['lat'] = coords['lat']
                 job['lon'] = coords['lon']
