@@ -193,7 +193,7 @@ B구역은 400kg이고 8시30분부터 12시까지야.
                           <Badge variant="outline">{job.demand_kg}kg</Badge>
                         </div>
                         <p className="text-muted-foreground text-xs">
-                          {job.tw_start} ~ {job.tw_end} | 우선순위: {job.priority}
+                          {job.tw_start} ~ {job.tw_end}
                         </p>
                       </div>
                     ))}

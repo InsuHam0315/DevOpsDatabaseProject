@@ -9,7 +9,12 @@ DB_USER = os.getenv('DB_USER')
 DB_PASSWORD = os.getenv('DB_PASSWORD')
 DB_DSN = os.getenv('DB_DSN')
 
+# OpenRouter API 설정
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 OPENROUTER_API_URL = os.getenv('OPENROUTER_API_URL')
 
+# Flask 포트 설정
 FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
+
+# Google Gemini LLM 설정
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')

@@ -5,22 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Route, Car, MapPin, Clock, Zap, TrendingDown, Settings, Brain, ChartBar as BarChart3, Timer, Fuel } from 'lucide-react';
+import { Route, Car, MapPin, Clock, Zap, TrendingDown, Brain, Timer, Fuel } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import KakaoMapPlaceholder from '@/components/ui/kakao-map-placeholder';
 
 export default function RoutesPage() {
   const { routes, kpis, vehicles } = useStore();
-  const [showScenarioDialog, setShowScenarioDialog] = useState(false);
-  const [scenarioSettings, setScenarioSettings] = useState({
-    extra_vehicle: false,
-    extend_time_window: false,
-    priority_weight: 1.0
-  });
 
   const kpiCards = [
     {
@@ -53,11 +43,6 @@ export default function RoutesPage() {
     }
   ];
 
-  const handleScenarioChange = () => {
-    // Mock scenario recalculation
-    setShowScenarioDialog(false);
-    // In real app, would trigger new optimization with scenario params
-  };
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -206,82 +191,6 @@ export default function RoutesPage() {
             </CardContent>
           </Card>
 
-          {/* Alternative Scenarios */}
-          <div className="flex gap-3">
-            <Dialog open={showScenarioDialog} onOpenChange={setShowScenarioDialog}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2">
-                  <Settings className="w-4 h-4" />
-                  대안 시나리오
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>시나리오 설정</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label>추가 차량 투입</Label>
-                    <Select 
-                      value={scenarioSettings.extra_vehicle ? "true" : "false"}
-                      onValueChange={(value) => setScenarioSettings(prev => ({ 
-                        ...prev, extra_vehicle: value === "true" 
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="false">현재 차량만 사용</SelectItem>
-                        <SelectItem value="true">차량 +1대 추가</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label>시간창 확대</Label>
-                    <Select
-                      value={scenarioSettings.extend_time_window ? "true" : "false"}
-                      onValueChange={(value) => setScenarioSettings(prev => ({ 
-                        ...prev, extend_time_window: value === "true" 
-                      }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="false">기본 시간창</SelectItem>
-                        <SelectItem value="true">시간창 +2시간</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label>우선순위 가중치</Label>
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      max="2.0"
-                      value={scenarioSettings.priority_weight}
-                      onChange={(e) => setScenarioSettings(prev => ({ 
-                        ...prev, priority_weight: parseFloat(e.target.value) 
-                      }))}
-                    />
-                  </div>
-                  
-                  <Button onClick={handleScenarioChange} className="w-full">
-                    시나리오 적용
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-            
-            <Button variant="outline" className="flex items-center gap-2">
-              <BarChart3 className="w-4 h-4" />
-              상세 분석
-            </Button>
-          </div>
         </div>
       </div>
     </div>

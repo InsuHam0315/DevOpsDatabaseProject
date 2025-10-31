@@ -24,7 +24,7 @@ interface AppStore {
 
   chartData: ChartData;
 
- 
+
 
   // UI State
 
@@ -35,6 +35,10 @@ interface AppStore {
   currentRequest: OptimizationRequest | null;
 
   isOptimizing: boolean;
+
+  isAuthenticated: boolean;
+
+  currentUser: string | null;
 
  
 
@@ -72,6 +76,10 @@ interface AppStore {
 
   deleteJob: (index: number) => void;
 
+  login: (username: string, password: string) => boolean;
+
+  logout: () => void;
+
 }
 
 
@@ -105,6 +113,10 @@ export const useStore = create<AppStore>((set, get) => ({
   currentRequest: null,
 
   isOptimizing: false,
+
+  isAuthenticated: false,
+
+  currentUser: null,
 
  
 
@@ -236,6 +248,16 @@ export const useStore = create<AppStore>((set, get) => ({
 
     jobs: state.jobs.filter((_, i) => i !== index)
 
-  }))
+  })),
+
+  login: (username, password) => {
+    if (username === 'admin' && password === '1234') {
+      set({ isAuthenticated: true, currentUser: 'admin' });
+      return true;
+    }
+    return false;
+  },
+
+  logout: () => set({ isAuthenticated: false, currentUser: null })
 
 }));

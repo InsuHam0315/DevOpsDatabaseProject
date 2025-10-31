@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ChartBar as BarChart3, TrendingUp, Filter, Calendar, Eye, Download } from 'lucide-react';
+import { ChartBar as BarChart3, TrendingUp, Filter, Calendar, Eye, Download, Route as RouteIcon, Zap, Clock } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import {
   LineChart,
@@ -25,7 +25,7 @@ import {
 } from 'recharts';
 
 export default function DashboardPage() {
-  const { chartData, runHistory, vehicles, sectors } = useStore();
+  const { chartData, runHistory, vehicles, sectors, kpis } = useStore();
   const [dateRange, setDateRange] = useState('week');
   const [selectedVehicle, setSelectedVehicle] = useState('all');
   const [selectedSector, setSelectedSector] = useState('all');
@@ -44,6 +44,25 @@ export default function DashboardPage() {
           <p className="text-muted-foreground">
             물류 운영 성과와 친환경 지표를 모니터링하세요.
           </p>
+          {/* KPI Summary moved here */}
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg">
+              <RouteIcon className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-900">{kpis.total_distance_km}km</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-lg">
+              <Zap className="w-4 h-4 text-green-600" />
+              <span className="text-sm font-medium text-green-900">{kpis.total_co2_kg}kg CO₂</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-lg">
+              <Clock className="w-4 h-4 text-purple-600" />
+              <span className="text-sm font-medium text-purple-900">{Math.floor(kpis.total_time_min / 60)}h {kpis.total_time_min % 60}m</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-lg">
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+              <span className="text-sm font-medium text-emerald-900">{kpis.saving_percent}%</span>
+            </div>
+          </div>
         </div>
         <Button variant="outline" className="flex items-center gap-2">
           <Download className="w-4 h-4" />
@@ -127,20 +146,20 @@ export default function DashboardPage() {
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData.weekly_co2}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="date" 
+                <XAxis
+                  dataKey="date"
                   tick={{ fontSize: 12 }}
                   tickFormatter={(value) => new Date(value).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })}
                 />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip 
+                <Tooltip
                   labelFormatter={(value) => `날짜: ${new Date(value).toLocaleDateString('ko-KR')}`}
                   formatter={(value: any) => [`${value}kg`, 'CO₂ 배출량']}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="co2" 
-                  stroke="#22c55e" 
+                <Line
+                  type="monotone"
+                  dataKey="co2"
+                  stroke="#22c55e"
                   strokeWidth={2}
                   dot={{ fill: '#22c55e', strokeWidth: 2 }}
                   activeDot={{ r: 6 }}
@@ -168,72 +187,6 @@ export default function DashboardPage() {
                 <Bar dataKey="distance" fill="#3b82f6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Sector Demand Pie Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-purple-600" />
-              섹터별 처리량
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={chartData.sector_demands}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="demand"
-                >
-                  {chartData.sector_demands.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: any) => [`${value}kg`, '처리량']} />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Summary Stats */}
-        <Card>
-          <CardHeader>
-            <CardTitle>주요 지표 요약</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-center p-4 bg-green-50 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">
-                  {chartData.weekly_co2.reduce((sum, d) => sum + d.co2, 0).toFixed(1)}kg
-                </p>
-                <p className="text-sm text-muted-foreground">주간 총 CO₂</p>
-              </div>
-              <div className="text-center p-4 bg-blue-50 rounded-lg">
-                <p className="text-2xl font-bold text-blue-600">
-                  {chartData.vehicle_distances.reduce((sum, d) => sum + d.distance, 0)}km
-                </p>
-                <p className="text-sm text-muted-foreground">총 주행거리</p>
-              </div>
-              <div className="text-center p-4 bg-purple-50 rounded-lg">
-                <p className="text-2xl font-bold text-purple-600">
-                  {chartData.sector_demands.reduce((sum, d) => sum + d.demand, 0)}kg
-                </p>
-                <p className="text-sm text-muted-foreground">총 처리량</p>
-              </div>
-              <div className="text-center p-4 bg-amber-50 rounded-lg">
-                <p className="text-2xl font-bold text-amber-600">
-                  {runHistory.length}개
-                </p>
-                <p className="text-sm text-muted-foreground">실행 건수</p>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>
