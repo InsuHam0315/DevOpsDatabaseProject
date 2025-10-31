@@ -9,12 +9,12 @@ def get_sector_coordinates(SECTOR_NAME: str) -> dict:
         cursor = conn.cursor()
         
         cleaned_name = SECTOR_NAME.strip()
-        print(f"🔍 SECTOR 테이블 조회: '{cleaned_name}'")
+        #print(f"🔍 SECTOR 테이블 조회: '{cleaned_name}'")
         
         # 1. 먼저 SECTOR 테이블에 어떤 데이터가 있는지 전체 조회
         cursor.execute("SELECT SECTOR_NAME, LATITUDE, LONGITUDE FROM SECTORS")
         all_sectors = cursor.fetchall()
-        print(f"📋 SECTOR 테이블 전체 데이터: {all_sectors}")
+        #print(f"📋 SECTOR 테이블 전체 데이터: {all_sectors}")
         
         # 2. 정확한 매칭 시도
         cursor.execute("""
@@ -23,10 +23,10 @@ def get_sector_coordinates(SECTOR_NAME: str) -> dict:
         
         result = cursor.fetchone()
         if result:
-            print(f"✅ SECTOR 테이블에서 찾음: '{cleaned_name}'")
+            #print(f"✅ SECTOR 테이블에서 찾음: '{cleaned_name}'")
             return {'SECTOR_ID': result[0], 'LATITUDE': result[1], 'LONGITUDE': result[2]}
         else:
-            print(f"❌ SECTOR 테이블에서 찾지 못함: '{cleaned_name}'")
+            #print(f"❌ SECTOR 테이블에서 찾지 못함: '{cleaned_name}'")
             
             # 3. 유사한 데이터가 있는지 확인
             cursor.execute("""
@@ -37,8 +37,6 @@ def get_sector_coordinates(SECTOR_NAME: str) -> dict:
             similar_results = cursor.fetchall()
             if similar_results:
                 print(f"🔍 유사한 SECTOR 데이터: {similar_results}")
-            else:
-                print(f"🔍 '{cleaned_name}'와 유사한 데이터도 없음")
                 
             return None
     except Exception as e:

@@ -22,13 +22,12 @@ def call_llm(prompt: str) -> str:
     delay = 2 # 2초부터 시작
     for attempt in range(retries):
         try:
-            # Google API 호출 (OpenRouter와 달리 payload 구조가 간단함)
+            # Google API 호출
             response = model.generate_content(prompt)
             
             # (중요) Google API는 응답 본문에 .text로 바로 접근
             if not response.candidates:
                  raise ValueError("API 응답에 유효한 'candidates'가 없습니다. (안전 문제로 차단되었을 수 있음)")
-            
             return response.text
 
         except (google_exceptions.ResourceExhausted,  # 429 Too Many Requests
@@ -157,8 +156,6 @@ def parse_natural_language():
 
     except ValueError as ve:
         return jsonify({"error": "LLM 응답 처리 실패", "details": str(ve)}), 500
-    except requests.exceptions.RequestException as re:
-        return jsonify({"error": "LLM API 호출 실패", "details": str(re)}), 502
     except Exception as e:
         print(f"예상치 못한 오류: {e}")
         return jsonify({"error": "내부 서버 오류 발생", "details": str(e)}), 500
@@ -324,7 +321,7 @@ def generate_route_comparison_explanation(run_id: str):
         cursor.execute("""
             UPDATE RUN_SUMMARY 
             SET LLM_EXPLANATION = :llm_explanation
-            WHERE RUN_ID = :run_id AND ROUTE_OPTION_NAME = 'OR-Tools Optimal'
+            WHERE RUN_ID = :run_id AND ROUTE_OPTION_NAME = 'Our Eco Optimal Route'
         """, {
             'llm_explanation': llm_explanation,
             'run_id': run_id
@@ -377,7 +374,7 @@ def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
     
     prompt += f"""
 [분석 요청]
-다음 내용을 중심으로 "OR-Tools Optimal" 경로가 다른 경로에 비해 왜 가장 우수한지 분석해주세요:
+다음 내용을 중심으로 "Our Eco Optimal Route" 경로가 다른 경로에 비해 왜 가장 우수한지 분석해주세요:
 
 1. **거리 효율성**: 총 주행 거리 비교 및 분석
 2. **환경적 영향**: CO2 배출량 차이와 환경적 이점
