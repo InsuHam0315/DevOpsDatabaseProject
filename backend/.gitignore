@@ -1,0 +1,11 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Next.js build/cache
+.next/
+node_modules/
+
+# IDE / OS
+.vscode/
+.DS_Store
