@@ -5,7 +5,7 @@ __pycache__/
 # Next.js build/cache
 .next/
 node_modules/
-
+.gz
 # IDE / OS
 .vscode/
 .DS_Store
