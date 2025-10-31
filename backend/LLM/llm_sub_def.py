@@ -1,5 +1,6 @@
 from services.db_handler import get_db_connection # 함수 이름 변경 및 추가
-    
+
+
 def get_sector_coordinates(SECTOR_NAME: str) -> dict:
     """SECTOR 테이블에서 sector_name에 해당하는 좌표를 조회 - 디버깅 강화"""
     conn = None
@@ -79,3 +80,4 @@ def preprocess_with_sector_data(parsed_data: dict) -> dict:
                         print(f"ℹ️  SECTOR에 없는 도착지: {address}")
     
     return parsed_data
+#-------------------------------------------------------------------------------------------------

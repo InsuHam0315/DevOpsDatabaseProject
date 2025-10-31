@@ -2,17 +2,17 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import traceback
 import sys
+
 # --------------------------------------------------------------------------
 # ⭐ [다른 팀원 작업] LLM 관련 모듈 임포트 유지
 # --------------------------------------------------------------------------
 # LLM 모듈이 존재하지 않을 경우를 대비하여 ImportError를 무시하고 진행
 try:
-    from LLM.llm_call import llm_bp
+    from LLM.llm_call import llm_bp # ⬅️ 이제 이 경로는 (BASE_DIR + /LLM/llm_call.py)를 찾습니다.
     LLM_BLUEPRINT_AVAILABLE = True
-except ImportError:
-    print("⚠️ WARNING: LLM.llm_call.llm_bp 모듈을 찾을 수 없습니다. LLM 기능은 비활성화됩니다.")
+except ImportError as e: # ⬅️ [수정] 오류가 뜬다면 여기서 e를 출력하게 합니다.
+    print(f"❌ LLM 블루프린트 임포트 실패: {e}") # ⬅️ 디버깅을 위해 e를 출력
     LLM_BLUEPRINT_AVAILABLE = False
-
 
 # --------------------------------------------------------------------------
 # ⭐ [우리 팀 작업] 서비스 및 최적화 모듈 임포트
@@ -103,6 +103,9 @@ def handle_optimization_request():
         error_details = traceback.format_exc()
         print(f"   Internal server error during /optimize handling:\n{error_details}")
         return jsonify({"status": "failed", "message": f"서버 내부 오류 발생: {e}"}), 500
+
+
+
 
 # --- 서버 실행 ---
 if __name__ == '__main__':

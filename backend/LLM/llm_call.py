@@ -3,41 +3,67 @@ import config
 # db_handler.py 에서 DB 관련 함수들을 가져온다고 가정
 from services.db_handler import get_db_connection # 함수 이름 변경 및 추가
 from LLM.llm_db_save import save_run, save_job
-from .lat_lon_kakao import enhance_parsed_data_with_geocoding
-from .llm_sub_def import preprocess_with_sector_data
-import requests
+from LLM.lat_lon_kakao import enhance_parsed_data_with_geocoding
+from LLM.llm_sub_def import preprocess_with_sector_data
+import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 import json
 from datetime import datetime # datetime 임포트 추가
 from optimizer.engine import run_optimization
 
 llm_bp = Blueprint('llm', __name__) #flask는 독립적이므로 app이 아닌 blueprint를 사용
 
-
+genai.configure(api_key=config.GOOGLE_API_KEY)
 def call_llm(prompt: str) -> str:
-    # ... (이전 코드와 동일하게 유지하되, 오류 로깅 등 개선된 부분 유지) ...
-    headers = {"Authorization": f"Bearer {config.OPENROUTER_API_KEY}"}
-    payload = {"model": "google/gemini-2.0-flash-exp:free", "messages": [{"role": "user", "content": prompt}]}
-    
-    try:
-        response = requests.post(config.OPENROUTER_API_URL, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-        # 실제 응답 구조 확인 필요
-        return response.json()["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException as e:
-        print(f"API 호출 오류: {e}")
-        raise # 오류 재발생
-    except (KeyError, IndexError, TypeError) as e: # TypeError 추가
-        print(f"API 응답 구조 오류: {e}, 응답: {response.text if 'response' in locals() else 'N/A'}")
-        raise ValueError("API 응답 구조가 예상과 다릅니다.")
+
+    model = genai.GenerativeModel('gemini-2.5-flash')
+
+    retries = 3
+    delay = 2 # 2초부터 시작
+    for attempt in range(retries):
+        try:
+            # Google API 호출 (OpenRouter와 달리 payload 구조가 간단함)
+            response = model.generate_content(prompt)
+            
+            # (중요) Google API는 응답 본문에 .text로 바로 접근
+            if not response.candidates:
+                 raise ValueError("API 응답에 유효한 'candidates'가 없습니다. (안전 문제로 차단되었을 수 있음)")
+            
+            return response.text
+
+        except (google_exceptions.ResourceExhausted,  # 429 Too Many Requests
+                google_exceptions.ServiceUnavailable, # 5xx 서버 오류
+                google_exceptions.DeadlineExceeded) as e: # 타임아웃
+            
+            if attempt < retries - 1:
+                print(f"⚠️ LLM API 오류 (시도 {attempt + 1}/{retries}): {e}. {delay}초 후 재시도...")
+                time.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ LLM API 비-재시도 오류 (최대 재시도): {e}")
+                raise # 최대 재시도 도달 시 즉시 실패
+        
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            # 응답 파싱 오류 또는 안전 문제로 인한 차단 처리
+            print(f"API 응답 구조 오류 또는 차단: {e}")
+            try:
+                # 차단 시 피드백이 있는지 확인
+                print(f"    차단 피드백: {response.prompt_feedback}")
+            except Exception:
+                pass
+            raise ValueError(f"API 응답 구조가 예상과 다르거나 콘텐츠가 차단되었습니다: {e}")
+            
+        except Exception as e:
+            # 기타 예상치 못한 오류
+            print(f"❌ LLM API 알 수 없는 오류: {e}")
+            if attempt < retries - 1:
+                 time.sleep(delay)
+                 delay *= 2
+            else:
+                raise # 최대 재시도 도달
+    raise Exception("LLM 호출 재시도 모두 실패")
 
 
-response = requests.get(
-  url="https://openrouter.ai/api/v1/key",
-  headers={
-    "Authorization": f"Bearer {config.OPENROUTER_API_KEY}"
-  }
-)
-print(json.dumps(response.json(), indent=2))
 
 
 # --- API #1: 자연어 파싱 API ---
@@ -258,12 +284,6 @@ def save_plan_and_analyze():
     }), 200
         
 
-
-
-
-#-----------------------------------------------------------------------------------------------------
-# --- API #3: 결과 조회 API ---
-# (이전 제안과 거의 동일, 분석 결과만 가져오도록 명확화)
 def generate_route_comparison_explanation(run_id: str):
     """
     같은 RUN_ID의 여러 경로 옵션을 비교 분석하여 LLM 설명을 생성하고 저장합니다.
@@ -322,7 +342,10 @@ def generate_route_comparison_explanation(run_id: str):
     finally:
         if conn:
             conn.close()
+#-------------------------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------------------------
 def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
     """
     경로 비교 분석을 위한 LLM 프롬프트 생성
@@ -374,11 +397,8 @@ def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
 """
     
     return prompt
+
 #-----------------------------------------------------------------------------------------------------
-
-
-
-
 def group_assignments_by_vehicle(assignments_data: list) -> list:
     """
     DB에서 조회된 assignments 딕셔너리 리스트를
