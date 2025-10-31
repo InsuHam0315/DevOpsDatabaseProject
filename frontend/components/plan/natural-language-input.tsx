@@ -55,7 +55,7 @@ export default function NaturalLanguageInput({ onParsed }: NaturalLanguageInputP
     }
   };
 
-  const exampleInput = `오늘 V001 차량으로 군산 국제여객터미널에서에서 출발해서 부산A에 150kg 배송할거고 내일은 V002 차량으로 서울A에서 출발해서 대전 신세계백화점으로 100kg 배송할거야.`;
+  const exampleInput = `오늘 부산82가1234 차량으로 6시부터 12시30분까지 군산 국제여객터미널에서에서 출발해서 부산신항에 15000kg 배송할거고 내일은 인천88사5678 차량으로 8시부터 12시까지 부산신항에서 출발해서 대전 신세계백화점으로 10000kg 배송할거야.`;
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

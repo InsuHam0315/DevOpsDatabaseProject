@@ -123,27 +123,28 @@ def enhance_parsed_data_with_geocoding(parsed_data: dict) -> dict:
             else:
                 geocoding_stats["failed_addresses"].append(f"출발지: {depot_address}")
     
+    
     # 2. 도착지(jobs) 좌표 변환
-    jobs = run.get('jobs', []) # ⬅️ 해당 run에 속한 jobs를 가져옴
-    for job in jobs:
-        address = job.get('address')
+        jobs = run.get('jobs', []) # ⬅️ 해당 run에 속한 jobs를 가져옴
+        for job in jobs:
+            address = job.get('address')
 
-        if job.get('lat') is not None and job.get('lon') is not None:
-            print(f"  ✅ 도착지 좌표 이미 있음: {address}")
-            continue
+            if job.get('lat') is not None and job.get('lon') is not None:
+                print(f"  ✅ 도착지 좌표 이미 있음: {address}")
+                continue
             
-        if address:
-            geocoding_stats["total_jobs"] += 1
+            if address:
+                geocoding_stats["total_jobs"] += 1
                 
-            coords = get_coordinates_from_address_enhanced(address)
+                coords = get_coordinates_from_address_enhanced(address)
                 
-            if coords.get('lat') and coords.get('lon'):
-                job['lat'] = coords['lat']
-                job['lon'] = coords['lon']
-                job['resolved_address'] = coords.get('address_name', address)
-                geocoding_stats["success_jobs"] += 1
-            else:
-                geocoding_stats["failed_addresses"].append(f"도착지: {address}")
+                if coords.get('lat') and coords.get('lon'):
+                    job['lat'] = coords['lat']
+                    job['lon'] = coords['lon']
+                    job['resolved_address'] = coords.get('address_name', address)
+                    geocoding_stats["success_jobs"] += 1
+                else:
+                    geocoding_stats["failed_addresses"].append(f"도착지: {address}")
     
     parsed_data['_geocoding_stats'] = geocoding_stats
     

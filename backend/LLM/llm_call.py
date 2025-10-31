@@ -17,6 +17,7 @@ def call_llm(prompt: str) -> str:
     # ... (이전 코드와 동일하게 유지하되, 오류 로깅 등 개선된 부분 유지) ...
     headers = {"Authorization": f"Bearer {config.OPENROUTER_API_KEY}"}
     payload = {"model": "google/gemini-2.0-flash-exp:free", "messages": [{"role": "user", "content": prompt}]}
+    
     try:
         response = requests.post(config.OPENROUTER_API_URL, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
@@ -28,6 +29,15 @@ def call_llm(prompt: str) -> str:
     except (KeyError, IndexError, TypeError) as e: # TypeError 추가
         print(f"API 응답 구조 오류: {e}, 응답: {response.text if 'response' in locals() else 'N/A'}")
         raise ValueError("API 응답 구조가 예상과 다릅니다.")
+
+
+response = requests.get(
+  url="https://openrouter.ai/api/v1/key",
+  headers={
+    "Authorization": f"Bearer {config.OPENROUTER_API_KEY}"
+  }
+)
+print(json.dumps(response.json(), indent=2))
 
 
 # --- API #1: 자연어 파싱 API ---
@@ -357,7 +367,7 @@ def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
 - 숫자와 수치를 구체적으로 언급하며 비교해주세요
 - 전문적이지만 이해하기 쉽게 설명해주세요
 - 한국어로 답변해주세요
-- "OR-Tools Optimal" 경로의 우수성을 강조해주세요
+- "Our Eco Optimal Route" 경로의 우수성을 강조해주세요
 - 분석 결과는 RUN_SUMMARY 테이블의 LLM_EXPLANATION 컬럼에 저장될 것입니다
 
 분석 결과:
