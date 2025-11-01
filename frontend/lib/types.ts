@@ -71,3 +71,29 @@ export interface ChartData {
   vehicle_distances: Array<{ vehicle: string; distance: number }>;
   sector_demands: Array<{ sector: string; demand: number }>;
 }
+
+//------------------------------------------------LLM 결과표출
+export interface OptimizationSummary {
+  route_name: string;
+  total_distance_km: number;
+  total_co2_g: number;
+  total_time_min: number;
+}
+
+
+export interface BatchResult {
+  status: 'success' | 'failed';
+  run_id: string;
+  optimization_result?: {
+    status: string;
+    run_id: string;
+    results: OptimizationSummary[];
+    comparison?: {
+      co2_saving_g: number;
+      co2_saving_pct: number;
+    };
+  };
+  message?: string;
+  llm_explanation?: string | null;
+}
+//------------------------------------------------

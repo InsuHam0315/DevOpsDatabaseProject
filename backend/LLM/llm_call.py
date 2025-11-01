@@ -187,7 +187,7 @@ def save_plan_and_analyze():
     
     for i, run_item in enumerate(runs_data):
         conn = None
-        run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{i}"
+        run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M')}_{i}"
         
         try:
             # ⭐ [추가] 10-1. 좌표 유효성 검사 (DB 저장 전)
@@ -267,7 +267,8 @@ def save_plan_and_analyze():
             all_run_results.append({
                 "status": "failed",
                 "run_id": run_id,
-                "message": str(e)
+                "message": str(e),
+                "llm_explanation": None # ⬅️ 실패 시에도 필드를 맞춰줍니다.
             })
         finally:
             if conn:
@@ -374,20 +375,19 @@ def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
     
     prompt += f"""
 [분석 요청]
-다음 내용을 중심으로 "Our Eco Optimal Route" 경로가 다른 경로에 비해 왜 가장 우수한지 분석해주세요:
-
-1. **거리 효율성**: 총 주행 거리 비교 및 분석
-2. **환경적 영향**: CO2 배출량 차이와 환경적 이점
-3. **시간 효율성**: 소요 시간 비교 및 운영 효율성
-4. **종합 평가**: 세 가지 요소를 종합적으로 고려한 최적의 선택 이유
-5. **비즈니스 관점**: 비용 절감, 고객 서비스, 환경 규제 준수 측면에서의 장점
+다음 내용을 중심으로 "Our Eco Optimal Route" 경로의 좋은 점을 각 항목당 간결하고(2줄 이내) 핵심만 말해주세요!! <!--"Our Eco Optimal Route" 경로는 다른 여러개의 경로들 중에 co2 발생이 가장 적은 경로 입니다.-->
+ 
+1. 🌱환경적 영향: CO2 배출량에 따른 환경적 이점
+2. ⏲️시간 효율성: 소요 시간 비교 및 운영 효율성
+3. 🤝🏼비즈니스 관점: 비용 절감, 고객 서비스, 환경 규제 준수 측면에서의 장점
 
 [작성 지침]
 - 데이터에 기반한 객관적인 분석을 제공해주세요
 - 숫자와 수치를 구체적으로 언급하며 비교해주세요
 - 전문적이지만 이해하기 쉽게 설명해주세요
-- 한국어로 답변해주세요
+- '한국어'로 답변해주세요
 - "Our Eco Optimal Route" 경로의 우수성을 강조해주세요
+- 앞 이모지 꼭 넣어주세요.
 - 분석 결과는 RUN_SUMMARY 테이블의 LLM_EXPLANATION 컬럼에 저장될 것입니다
 
 분석 결과:

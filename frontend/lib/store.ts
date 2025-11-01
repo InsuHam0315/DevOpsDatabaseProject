@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 
-import { Vehicle, Sector, Job, Route, OptimizationRequest, KPIs, RunHistory, ChartData } from './types';
+import { persist } from 'zustand/middleware';
+
+import { Vehicle, Sector, Job, Route, OptimizationRequest, KPIs, RunHistory, ChartData, BatchResult } from './types';
 
 import { mockVehicles, mockSectors, mockJobs, mockRoutes, mockKPIs, mockRunHistory, mockChartData } from './mock-data';
 
@@ -23,6 +25,8 @@ interface AppStore {
   runHistory: RunHistory[];
 
   chartData: ChartData;
+
+  batchResults: BatchResult[]; //LLM 결과표출
 
 
   // UI State
@@ -54,6 +58,8 @@ interface AppStore {
   setSelectedSectors: (sectors: string[]) => void;
 
   setCurrentRequest: (request: OptimizationRequest) => void;
+
+  setBatchResults: (results: BatchResult[]) => void; //LLM 결과표출
 
   runOptimization: (request: OptimizationRequest) => void;
 
@@ -101,7 +107,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   chartData: mockChartData,
 
- 
+  batchResults: [], //LLM 결과표출
 
   // Initial UI state
 
@@ -133,7 +139,7 @@ export const useStore = create<AppStore>((set, get) => ({
 
   setCurrentRequest: (request) => set({ currentRequest: request }),
 
- 
+  setBatchResults: (results) => set({ batchResults: results }), //LLM 결과표출
 
 
   runOptimization: async (request) => {

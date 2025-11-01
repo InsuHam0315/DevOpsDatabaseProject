@@ -10,7 +10,7 @@ import { useStore } from '@/lib/store';
 import KakaoMapPlaceholder from '@/components/ui/kakao-map-placeholder';
 
 export default function RoutesPage() {
-  const { routes, kpis, vehicles } = useStore();
+  const { routes, kpis, vehicles, batchResults } = useStore();
 
   const kpiCards = [
     {
@@ -165,36 +165,53 @@ export default function RoutesPage() {
               </Accordion>
             </CardContent>
           </Card>
-
+{/*------------------------------------------------------------------------------------- LLM 결과표출 추가로 인한 수정 */}     
           {/* LLM Explanation */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="w-5 h-5" />
-                결과 설명 (LLM)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  🤖 <strong>최적화 분석:</strong> 총 2대의 차량으로 3개 섹터를 효율적으로 배송합니다. 
-                  전기차(TRK01)를 우선 배치하여 CO₂ 배출량을 23.5% 절감했습니다.
-                </p>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Brain className="w-5 h-5" />
+            결과 설명 (LLM)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+
+          {/* [수정] 하드코딩된 <div> 3개를 지우고 아래 로직으로 대체합니다. */}
+
+          {batchResults && batchResults.length > 0 ? (
+            // batchResults 배열을 순회 (여러 Run 결과가 있을 수 있으므로)
+            batchResults.map((result) => (
+              <div 
+                key={result.run_id} 
+                className="bg-blue-50 p-4 rounded-lg prose prose-sm max-w-none text-blue-900 whitespace-pre-line"
+              >
+                {result.status === 'success' ? (
+                  <>
+                    <strong className="text-blue-900">
+                      [Run ID: ...{result.run_id.slice(-6)}] 분석 결과:
+                    </strong>
+                    <p>{result.llm_explanation || "LLM 분석 텍스트가 없습니다."}</p>
+                  </>
+                ) : (
+                  <>
+                    <strong className="text-red-700">
+                      [Run ID: ...{result.run_id.slice(-6)}] 실행 실패:
+                    </strong>
+                    <p className="text-red-700">{result.message || "알 수 없는 오류"}</p>
+                  </>
+                )}
               </div>
-              <div className="bg-green-50 p-4 rounded-lg">
-                <p className="text-sm text-green-900">
-                  ⚡ <strong>친환경 효과:</strong> 기존 디젤 차량만 사용할 경우 대비 약 1.2kg의 CO₂를 절약합니다. 
-                  이는 소나무 약 0.5그루가 1년간 흡수하는 양과 같습니다.
-                </p>
-              </div>
-              <div className="bg-amber-50 p-4 rounded-lg">
-                <p className="text-sm text-amber-900">
-                  📈 <strong>최적화 포인트:</strong> 모든 시간창 제약을 만족하며, 
-                  차량별 용량 활용률은 평균 85%로 효율적입니다.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+            ))
+          ) : (
+            // store에 결과가 없을 경우
+            <p className="text-sm text-gray-500 italic">
+              표시할 LLM 분석 결과가 없습니다.
+            </p>
+          )}
+
+        </CardContent>
+      </Card>
+      {/*------------------------------------------------------------------------------------- LLM 결과표출 추가로 인한 수정 */}    
         </div>
       </div>
     </div>
