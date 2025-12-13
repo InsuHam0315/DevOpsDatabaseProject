@@ -1,0 +1,520 @@
+import oracledb
+import config
+import datetime as dt
+from typing import List, Dict, Tuple, Any, Optional
+
+# --------------------------------------------------------------------------
+# DB 연결 헬퍼 함수
+# --------------------------------------------------------------------------
+def get_db_connection():
+    """Oracle DB 연결 객체를 생성하고 반환합니다."""
+    try:
+        conn = oracledb.connect(
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            dsn=config.DB_DSN,
+            config_dir=config.OCI_WALLET_DIR,
+            wallet_location=config.OCI_WALLET_DIR,
+            wallet_password=config.OCI_WALLET_PASSWORD
+        )
+        return conn
+    except Exception as e:
+        # 연결 실패 시 ConnectionError를 발생시켜 상위 로직에서 처리하도록 합니다.
+        raise ConnectionError(f"DB 연결 실패: {e}")
+
+def test_db_connection() -> Dict:
+    """app.py에서 사용: DB 연결을 테스트하고, 성공 시 버전 정보를 반환하는 함수"""
+    try:
+        conn = oracledb.connect(
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            dsn=config.DB_DSN,
+            config_dir=config.OCI_WALLET_DIR,
+            wallet_location=config.OCI_WALLET_DIR,
+            wallet_password=config.OCI_WALLET_PASSWORD
+        )
+        db_version = conn.version
+        conn.close()
+        return {"status": "success", "db_version": db_version}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+# --------------------------------------------------------------------------
+# 데이터 조회 함수들 (CO2 Calculator 연동용)
+# --------------------------------------------------------------------------
+
+def get_settings_from_db() -> Dict[str, Any]:
+    """SETTINGS 테이블에서 모든 키-값 쌍을 조회하여 딕셔너리로 반환합니다."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        settings = {}
+        try:
+            cursor.execute("SELECT key, value FROM SETTINGS")
+            rows = cursor.fetchall()
+            settings = {row[0]: row[1] for row in rows}
+            return settings
+        finally:
+            cursor.close()
+            conn.close()
+    except ConnectionError:
+        return {}
+
+def get_congestion_factors_from_db(hour: int) -> Optional[Tuple[Any, ...]]:
+    """CONGESTION_INDEX 테이블에서 현재 시간에 맞는 혼잡도 계수 (time_factor, idle_factor)를 조회합니다."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            # 가장 최근에 COMPUTED_AT 된 데이터를 기준으로 조회합니다.
+            cursor.execute("""
+                SELECT time_factor, idle_factor
+                FROM CONGESTION_INDEX
+                WHERE computed_at=(SELECT MAX(computed_at) FROM CONGESTION_INDEX)
+                  AND hour_of_day=:h
+            """, {"h": hour})
+            row = cursor.fetchone()
+            return row
+        finally:
+            cursor.close()
+            conn.close()
+    except ConnectionError:
+        return None
+
+def get_its_traffic_speed(link_id: str, forecast_time: dt.datetime) -> Optional[float]:
+    """
+    ITS_TRAFFIC 테이블에서 특정 LINK_ID, 예상 시간 기준의 예상/실시간 속도(km/h)를 조회합니다.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT SPEED_KMH
+                FROM ITS_TRAFFIC
+                WHERE LINK_ID = :lid
+                ORDER BY OBSERVED_AT DESC
+                FETCH NEXT 1 ROWS ONLY
+            """, {'lid': link_id})
+            row = cursor.fetchone()
+            return float(row[0]) if row and row[0] is not None else None
+        finally:
+            cursor.close()
+            conn.close()
+    except ConnectionError:
+        return None
+
+def get_weather_factors(forecast_time: dt.datetime) -> List[Dict[str, Any]]:
+    """
+    WEATHER_FORECAST 테이블에서 날짜와 시간을 기반으로 날씨 데이터를 조회합니다.
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        result = []
+        
+        # TIMESTAMP에서 날짜(YYYYMMDD)와 시간(HHMM) 문자열 추출
+        fcst_date = forecast_time.strftime('%Y%m%d')
+        fcst_time = forecast_time.strftime('%H%M')
+
+        try:
+            cursor.execute("""
+                SELECT CATEGORY, FCST_VALUE
+                FROM WEATHER_FORECAST
+                WHERE FCST_DATE = :fd AND FCST_TIME = :ft
+                ORDER BY INGESTED_AT DESC
+            """, {'fd': fcst_date, 'ft': fcst_time})
+            
+            rows = cursor.fetchall()
+            for row in rows:
+                result.append({'category': row[0], 'fcst_value': row[1]})
+            
+            return result
+        finally:
+            cursor.close()
+            conn.close()
+    except ConnectionError:
+        return []
+
+
+# --------------------------------------------------------------------------
+# ⭐ 최적화 엔진용 데이터 조회 함수 ⭐
+# --------------------------------------------------------------------------
+def get_optimizer_input_data(run_id: str, vehicle_ids: List[str]) -> Dict:
+    """
+    최적화 계산에 필요한 모든 입력 데이터(차고지, 작업, 차량)를 DB에서 조회하여 구조화된 딕셔너리로 반환합니다.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    result = {"depot": None, "jobs": [], "vehicles": [], "run_date": None} 
+
+    try:
+        # 1. RUNS 테이블에서 차고지(Depot) 좌표 및 RUN_DATE 조회
+        cursor.execute("""
+            SELECT DEPOT_LAT, DEPOT_LON, RUN_DATE
+            FROM RUNS
+            WHERE RUN_ID = :run_id
+        """, {'run_id': run_id})
+        depot_row_tuple = cursor.fetchone()
+        if depot_row_tuple and len(depot_row_tuple) == 3:
+            result["depot"] = {"latitude": depot_row_tuple[0], "longitude": depot_row_tuple[1]}
+            # RUN_DATE를 datetime 객체로 변환
+            run_date = depot_row_tuple[2]
+            if isinstance(run_date, dt.date) and not isinstance(run_date, dt.datetime):
+                result["run_date"] = dt.datetime.combine(run_date, dt.time.min)
+            else:
+                 result["run_date"] = run_date
+        else:
+            raise ValueError(f"Run ID '{run_id}'를 찾을 수 없거나 데이터가 불완전합니다.")
+        
+        # 2. JOBS 테이블에서 해당 RUN_ID의 배송 작업 목록 조회
+        cursor.execute("""
+            SELECT JOB_ID, LATITUDE, LONGITUDE, DEMAND_KG, TW_START, TW_END
+            FROM JOBS WHERE RUN_ID = :run_id ORDER BY JOB_ID
+        """, {'run_id': run_id})
+        job_columns = [d[0].lower() for d in cursor.description]
+        job_rows_tuples = cursor.fetchall()
+        result["jobs"] = [dict(zip(job_columns, row)) for row in job_rows_tuples]
+
+        # 3. VEHICLES와 EMISSION_FACTORS 조인하여 차량 정보 조회
+        bind_vars = {f"vid{i}": vid for i, vid in enumerate(vehicle_ids)}
+        vehicle_query = f"""
+            SELECT v.VEHICLE_ID, v.CAPACITY_KG, ef.CO2_GPKM, ef.IDLE_GPS
+            FROM VEHICLES v JOIN EMISSION_FACTORS ef ON v.FACTOR_ID = ef.FACTOR_ID
+            WHERE v.VEHICLE_ID IN ({','.join(':' + name for name in bind_vars)})
+        """
+        cursor.execute(vehicle_query, bind_vars)
+        vehicle_columns = [d[0].lower() for d in cursor.description]
+        vehicle_rows_tuples = cursor.fetchall()
+        vehicles_by_id = {row[0]: dict(zip(vehicle_columns, row)) for row in vehicle_rows_tuples}
+        ordered_vehicles = []
+        for vid in vehicle_ids:
+            vehicle = vehicles_by_id.get(vid)
+            if vehicle:
+                ordered_vehicles.append(vehicle)
+        result["vehicles"] = ordered_vehicles
+
+        return result
+
+    finally:
+        cursor.close()
+        conn.close()
+
+# --------------------------------------------------------------------------
+# 데이터 저장 함수들
+# --------------------------------------------------------------------------
+def save_optimization_results(run_id: str, summary_data: Dict, assignments_data: List[Dict]):
+    """최적화 결과를 RUN_SUMMARY와 ASSIGNMENTS 테이블에 저장하고 RUNS 상태를 업데이트합니다."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # 1. RUN_SUMMARY 테이블에 결과 요약 저장 (기존 데이터 삭제 후 INSERT)
+        cursor.execute("""
+            DELETE FROM RUN_SUMMARY
+            WHERE RUN_ID = :run_id AND ROUTE_OPTION_NAME = :route_option_name
+        """, {'run_id': run_id, 'route_option_name': summary_data['route_option_name']})
+
+        cursor.execute("""
+            INSERT INTO RUN_SUMMARY (
+                RUN_ID, ROUTE_OPTION_NAME, TOTAL_DISTANCE_KM, TOTAL_CO2_G, TOTAL_TIME_MIN
+            ) VALUES (
+                :run_id, :route_option_name, :total_distance_km, :total_co2_g, :total_time_min
+            )
+        """, summary_data)
+
+        # 2. ASSIGNMENTS 테이블에 개별 경로 저장 (기존 데이터 삭제 후 INSERT MANY)
+        cursor.execute("""
+            DELETE FROM ASSIGNMENTS
+            WHERE RUN_ID = :run_id AND ROUTE_OPTION_NAME = :route_option_name
+        """, {'run_id': run_id, 'route_option_name': summary_data['route_option_name']})
+
+        assignment_tuples = [
+            (
+                a['run_id'], a['route_option_name'], a['vehicle_id'], a['step_order'],
+                a['start_job_id'], a['end_job_id'], a['distance_km'], a['co2_g'],
+                a['load_kg'], a['time_min'], a['avg_gradient_pct'], a['congestion_factor']
+            )
+            for a in assignments_data
+        ]
+
+        if assignment_tuples:
+            cursor.executemany("""
+                INSERT INTO ASSIGNMENTS (
+                    RUN_ID, ROUTE_OPTION_NAME, VEHICLE_ID, STEP_ORDER,
+                    START_JOB_ID, END_JOB_ID, DISTANCE_KM, CO2_G,
+                    LOAD_KG, TIME_MIN, AVG_GRADIENT_PCT, CONGESTION_FACTOR
+                ) VALUES (
+                    :1, :2, :3, :4, :5, :6, :7, :8, :9, :10, :11, :12
+                )
+            """, assignment_tuples)
+
+        # 3. RUNS 테이블 상태 업데이트
+        cursor.execute("""
+            UPDATE RUNS SET OPTIMIZATION_STATUS = 'COMPLETED'
+            WHERE RUN_ID = :run_id
+        """, {'run_id': run_id})
+
+        conn.commit()
+        # print(f"✅ Run ID {run_id} ('{summary_data['route_option_name']}') 결과 DB 저장 완료.")
+
+    except Exception as e:
+        conn.rollback()
+        print(f"❌ DB 저장 중 오류 발생: {e}")
+        raise e
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_dashboard_data(limit: int = 20) -> dict:
+    """
+    대시보드용 요약 데이터를 반환합니다.
+    반환 구조:
+    {
+      "run_history": [ { run_id, date, total_distance_km, total_co2_kg, total_time_min, saving_pct } ... ],
+      "kpis": { total_distance_km, total_co2_kg, total_time_min, saving_percent },
+      "batch_results": [ { run_id, optimization_result: { status, run_id, results: [ { route_name, total_distance_km, total_co2_g, total_time_min, saving_pct } ] } } ... ]
+    }
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # RUN_SUMMARY와 RUNS를 조인하여 최근 run_id별 집계 조회
+        cursor.execute(f"""
+            SELECT rs.run_id, r.run_date, rs.route_option_name, rs.total_distance_km, rs.total_co2_g, rs.total_time_min, rs.saving_pct
+            FROM RUN_SUMMARY rs
+            JOIN RUNS r ON rs.run_id = r.run_id
+            ORDER BY r.run_date DESC
+        """)
+
+        rows = cursor.fetchall()
+        if not rows:
+            return {"run_history": [], "kpis": {"total_distance_km": 0, "total_co2_kg": 0, "total_time_min": 0, "saving_percent": 0}, "batch_results": []}
+
+        # 그룹화: run_id -> list of route options
+        runs_map = {}
+        for row in rows:
+            run_id = row[0]
+            run_date = row[1]
+            route_name = row[2]
+            dist = row[3] or 0
+            co2_g = row[4] or 0
+            time_min = row[5] or 0
+            saving_pct = row[6] or 0
+
+            if run_id not in runs_map:
+                runs_map[run_id] = {
+                    "run_id": run_id,
+                    "date": run_date.isoformat() if hasattr(run_date, 'isoformat') else str(run_date),
+                    "routes": [],
+                }
+            runs_map[run_id]["routes"].append({
+                "route_name": route_name,
+                "total_distance_km": float(dist),
+                "total_co2_g": float(co2_g),
+                "total_time_min": float(time_min),
+                "saving_pct": float(saving_pct)
+            })
+
+        # 정렬 및 제한
+        run_items = list(runs_map.values())
+        run_items.sort(key=lambda x: x['date'], reverse=True)
+        run_items = run_items[:limit]
+
+        # run_history 및 batch_results 생성
+        run_history = []
+        batch_results = []
+        agg_distance = 0.0
+        agg_co2_kg = 0.0
+        agg_time = 0.0
+
+        for run in run_items:
+            total_distance = sum(r['total_distance_km'] for r in run['routes'])
+            total_co2_kg = sum(r['total_co2_g'] for r in run['routes']) / 1000.0
+            total_time = sum(r['total_time_min'] for r in run['routes'])
+            saving_pct = max((r.get('saving_pct', 0) for r in run['routes']), default=0)
+
+            run_history.append({
+                "run_id": run['run_id'],
+                "date": run['date'],
+                "total_distance": round(total_distance, 2),
+                "total_co2": round(total_co2_kg, 3),
+                "total_time_min": round(total_time, 1),
+                "served_jobs": 0
+            })
+
+            batch_results.append({
+                "status": "success",
+                "run_id": run['run_id'],
+                "optimization_result": {
+                    "status": "success",
+                    "run_id": run['run_id'],
+                    "results": run['routes']
+                },
+                "llm_explanation": None
+            })
+
+            agg_distance += total_distance
+            agg_co2_kg += total_co2_kg
+            agg_time += total_time
+
+        kpis = {
+            "total_distance_km": round(agg_distance, 2),
+            "total_co2_kg": round(agg_co2_kg, 3),
+            "total_time_min": round(agg_time, 1),
+            "saving_percent": 0
+        }
+
+        return {"run_history": run_history, "kpis": kpis, "batch_results": batch_results}
+
+    except Exception as e:
+        print(f"get_dashboard_data 오류: {e}")
+        return {"run_history": [], "kpis": {"total_distance_km": 0, "total_co2_kg": 0, "total_time_min": 0, "saving_percent": 0}, "batch_results": []}
+    finally:
+        try:
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
+
+
+def _coerce_date_str(value) -> str:
+    """Helper: datetime/date -> ISO string."""
+    if isinstance(value, dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, dt.date):
+        return value.isoformat()
+    return str(value)
+
+
+def get_weekly_co2_trend(from_date: dt.date, to_date: dt.date,
+                          vehicle_id: Optional[str] = None,
+                          sector_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    주간 CO2 배출량 추이 (일 단위) 데이터를 반환합니다.
+    vehicle_id, sector_id(센터=섹터) 필터를 사용합니다.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT TRUNC(r.run_date) AS run_day,
+                   SUM(a.co2_g) AS total_co2_g
+            FROM ASSIGNMENTS a
+            JOIN RUNS r ON a.run_id = r.run_id
+            LEFT JOIN JOBS j ON a.end_job_id = j.job_id
+            WHERE r.run_date BETWEEN :from_date AND :to_date
+              AND a.route_option_name IN (:route_option, :route_option_legacy)
+        """
+        params = {
+            "from_date": from_date,
+            "to_date": to_date,
+            "route_option": "CO2 Optimal Route",
+            "route_option_legacy": "Our Eco Optimal Route"
+        }
+        if vehicle_id:
+            query += " AND a.vehicle_id = :vehicle_id"
+            params["vehicle_id"] = vehicle_id
+        if sector_id:
+            query += " AND j.sector_id = :sector_id"
+            params["sector_id"] = sector_id
+
+        query += " GROUP BY TRUNC(r.run_date) ORDER BY TRUNC(r.run_date)"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [
+            {
+                "date": _coerce_date_str(row[0]),
+                "co2_kg": round((row[1] or 0) / 1000.0, 3)
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"get_weekly_co2_trend 오류: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_vehicle_distance_stats(from_date: dt.date, to_date: dt.date,
+                               vehicle_id: Optional[str] = None,
+                               sector_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    차량별 주행거리 데이터를 반환합니다.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT a.vehicle_id,
+                   SUM(a.distance_km) AS total_distance_km
+            FROM ASSIGNMENTS a
+            JOIN RUNS r ON a.run_id = r.run_id
+            LEFT JOIN JOBS j ON a.end_job_id = j.job_id
+            WHERE r.run_date BETWEEN :from_date AND :to_date
+              AND a.route_option_name IN (:route_option, :route_option_legacy)
+        """
+        params = {
+            "from_date": from_date,
+            "to_date": to_date,
+            "route_option": "CO2 Optimal Route",
+            "route_option_legacy": "Our Eco Optimal Route"
+        }
+        if vehicle_id:
+            query += " AND a.vehicle_id = :vehicle_id"
+            params["vehicle_id"] = vehicle_id
+        if sector_id:
+            query += " AND j.sector_id = :sector_id"
+            params["sector_id"] = sector_id
+
+        query += " GROUP BY a.vehicle_id ORDER BY total_distance_km DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [
+            {
+                "vehicle_id": row[0],
+                "distance_km": round(row[1] or 0, 2)
+            }
+            for row in rows
+            if row[0]
+        ]
+    except Exception as e:
+        print(f"get_vehicle_distance_stats 오류: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+# --------------------------------------------------------------------------
+# 🧪 OCI 연결 기반 테스트 코드 (main 블록) 
+# --------------------------------------------------------------------------
+if __name__ == '__main__':
+    # 이 테스트는 config.py가 올바르게 설정되어 있고 DB가 실행 중임을 가정합니다.
+    print("\n--- DB Handler 테스트 시작 ---")
+    
+    try:
+        # 0. 연결 테스트
+        conn_test_result = test_db_connection()
+        print(f"✅ 0. OCI 연결 상태: {conn_test_result['status']}")
+
+        if conn_test_result['status'] == 'success':
+            # 1. SETTINGS 조회 테스트
+            settings = get_settings_from_db()
+            print(f"✅ 1. SETTINGS 조회 성공. 총 {len(settings)}개 항목.")
+            
+            # 2. RUN 데이터 조회 테스트 (DML 기반)
+            test_run_id = 'RUN_20251015_001'
+            test_vehicle_ids = ['부산82가1234', '인천88사5678']
+            input_data = get_optimizer_input_data(test_run_id, test_vehicle_ids)
+            print(f"✅ 2. 입력 데이터 조회 성공. Jobs: {len(input_data['jobs'])}개, Vehicles: {len(input_data['vehicles'])}개")
+
+        else:
+            print("❌ DB 연결 실패로 상세 조회를 건너뜝니다.")
+
+    except ConnectionError:
+        print("\n❌ DB 연결 실패: config.py의 OCI 설정 정보를 확인하세요.")
+    except Exception as e:
+        print(f"\n❌ 테스트 중 오류 발생 (DB 데이터/스키마 오류 가능성): {e}")

@@ -1,0 +1,30 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Env / secrets
+.env
+../.env
+backend/.env
+frontend/.env
+*.pem
+*.key
+Wallet_*/
+
+# Next.js build/cache
+.next/
+node_modules/
+dist/
+build/
+coverage/
+*.gz
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

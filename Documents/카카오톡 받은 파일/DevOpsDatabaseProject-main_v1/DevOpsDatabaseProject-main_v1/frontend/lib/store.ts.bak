@@ -1,0 +1,380 @@
+import { create } from 'zustand';
+
+import { Vehicle, Sector, Job, Route, OptimizationRequest, KPIs, RunHistory, ChartData, BatchResult } from './types';
+
+import { mockVehicles, mockSectors, mockJobs, mockRoutes, mockKPIs, mockRunHistory, mockChartData } from './mock-data';
+
+// Helper: LLM 설명에서 KPI 수치 파싱
+const parseKpisFromExplanation = (expl?: string): { total_distance_km?: number; total_co2_kg?: number; total_time_min?: number } | null => {
+  if (!expl) return null;
+  try {
+    const text = String(expl);
+    const num = (s: string) => parseFloat(s.replace(/,/g, ''));
+
+    // CO2 (kg)
+    const co2Match = text.match(/([0-9]{1,3}(?:[,\d]*)(?:\.\d+)?)\s*(kg)\b/i);
+    const total_co2_kg = co2Match ? num(co2Match[1]) : undefined;
+
+    // Distance (km)
+    const distMatch = text.match(/([0-9]{1,3}(?:[,\d]*)(?:\.\d+)?)\s*km\b/i);
+    const total_distance_km = distMatch ? num(distMatch[1]) : undefined;
+
+    // Time: hours and minutes
+    const hoursMatch = text.match(/([0-9]{1,3}(?:\.\d+)?)\s*시간/i);
+    const minsMatch = text.match(/([0-9]{1,3}(?:\.\d+)?)\s*분/i);
+    let total_time_min: number | undefined = undefined;
+    if (hoursMatch || minsMatch) {
+      const h = hoursMatch ? num(hoursMatch[1]) : 0;
+      const m = minsMatch ? num(minsMatch[1]) : 0;
+      total_time_min = Math.round((h * 60 + m) * 100) / 100;
+    } else {
+      const onlyMin = text.match(/([0-9]{1,3}(?:\.\d+)?)\s*분/i);
+      if (onlyMin) total_time_min = num(onlyMin[1]);
+    }
+
+    return { total_distance_km, total_co2_kg, total_time_min };
+  } catch (e) {
+    return null;
+  }
+};
+
+interface AppStore {
+
+  // Data
+
+  vehicles: Vehicle[];
+
+  sectors: Sector[];
+
+  jobs: Job[];
+
+  routes: Route[];
+
+  kpis: KPIs;
+
+  runHistory: RunHistory[];
+
+  chartData: ChartData;
+
+  batchResults: BatchResult[];
+
+  // UI State
+
+  selectedVehicles: string[];
+
+  selectedSectors: string[];
+
+  currentRequest: OptimizationRequest | null;
+
+  isOptimizing: boolean;
+
+  isAuthenticated: boolean;
+
+  currentUser: string | null;
+  users: { username: string; password: string }[];
+
+ 
+
+  // Actions
+
+  setVehicles: (vehicles: Vehicle[]) => void;
+
+  setSectors: (sectors: Sector[]) => void;
+
+  setJobs: (jobs: Job[]) => void;
+
+  setSelectedVehicles: (vehicles: string[]) => void;
+
+  setSelectedSectors: (sectors: string[]) => void;
+
+  setCurrentRequest: (request: OptimizationRequest) => void;
+
+  runOptimization: (request: OptimizationRequest) => void;
+
+  addVehicle: (vehicle: Vehicle) => void;
+
+  updateVehicle: (id: string, vehicle: Partial<Vehicle>) => void;
+
+  deleteVehicle: (id: string) => void;
+
+  addSector: (sector: Sector) => void;
+
+  updateSector: (id: string, sector: Partial<Sector>) => void;
+
+  deleteSector: (id: string) => void;
+
+  addJob: (job: Job) => void;
+
+  updateJob: (index: number, job: Partial<Job>) => void;
+
+  deleteJob: (index: number) => void;
+
+  setBatchResults: (results: BatchResult[]) => void;
+
+  login: (username: string, password: string) => boolean;
+  register: (username: string, password: string) => boolean;
+
+  logout: () => void;
+
+}
+
+
+
+export const useStore = create<AppStore>((set, get) => ({
+
+  // Initial data
+
+  vehicles: mockVehicles,
+
+  sectors: mockSectors,
+
+  jobs: mockJobs,
+
+  routes: mockRoutes,
+
+  kpis: mockKPIs,
+
+  runHistory: mockRunHistory,
+
+  chartData: mockChartData,
+
+   batchResults: [],
+ 
+
+  // Initial UI state
+
+  selectedVehicles: [],
+
+  selectedSectors: [],
+
+  currentRequest: null,
+
+  isOptimizing: false,
+
+  isAuthenticated: false,
+
+  currentUser: null,
+  users: [{ username: 'admin', password: '1234' }],
+
+ 
+
+  // Actions
+
+  setVehicles: (vehicles) => set({ vehicles }),
+
+  setSectors: (sectors) => set({ sectors }),
+
+  setJobs: (jobs) => set({ jobs }),
+
+  setSelectedVehicles: (vehicles) => set({ selectedVehicles: vehicles }),
+
+  setSelectedSectors: (sectors) => set({ selectedSectors: sectors }),
+
+  setCurrentRequest: (request) => set({ currentRequest: request }),
+
+  setBatchResults: (results) => set(state => {
+    console.log('[store] setBatchResults 호출', results);
+    // batch result 구조에서 run summary를 만들어 runHistory와 KPIs를 업데이트합니다.
+    const runHistoryEntries = (results || []).map((br) => {
+      const optimization = br.optimization_result as any;
+      let total_distance = 0;
+      let total_co2 = 0; // kg
+      let total_time_min = 0;
+      let served_jobs = 0;
+      if (optimization && Array.isArray(optimization.results)) {
+        total_distance = optimization.results.reduce((acc: number, r: any) => acc + (r.total_distance_km ?? r.total_distance ?? 0), 0);
+        total_co2 = optimization.results.reduce((acc: number, r: any) => {
+          if (r.total_co2_g !== undefined) return acc + ((r.total_co2_g || 0) / 1000);
+          if (r.total_co2_kg !== undefined) return acc + (r.total_co2_kg || 0);
+          if (r.total_co2 !== undefined) return acc + (r.total_co2 || 0);
+          return acc;
+        }, 0);
+        // 총 소요시간 합산 (가능한 필드명 처리)
+        total_time_min = optimization.results.reduce((acc: number, r: any) => acc + (r.total_time_min ?? r.total_time ?? 0), 0);
+        served_jobs = optimization.results.length;
+      }
+      return {
+        run_id: br.run_id || (optimization?.run_id || `run_${Date.now()}`),
+        date: new Date().toLocaleString(),
+        total_distance: Math.round(total_distance * 100) / 100,
+        total_co2: Math.round(total_co2 * 100) / 100,
+        total_time_min: Math.round(total_time_min * 100) / 100,
+        served_jobs,
+        llm_explanation: br.llm_explanation || null
+      } as any;
+    });
+
+    // 기존 실행 이력과 합칩니다.
+    const combinedRunHistory = [...runHistoryEntries, ...state.runHistory];
+
+    // 전체 KPI 집계 (combined 기준)
+    const agg = combinedRunHistory.reduce((acc: any, rh: any) => {
+      acc.total_distance += rh.total_distance || 0;
+      acc.total_co2 += rh.total_co2 || 0;
+      acc.served_jobs += rh.served_jobs || 0;
+      acc.total_time_min += rh.total_time_min || 0;
+      return acc;
+    }, { total_distance: 0, total_co2: 0, served_jobs: 0, total_time_min: 0 });
+
+    // 기본 KPIs 집계값
+    let newKpis: any = {
+      total_distance_km: Math.round(agg.total_distance * 100) / 100,
+      total_co2_kg: Math.round(agg.total_co2 * 100) / 100,
+      total_time_min: Math.round(agg.total_time_min * 100) / 100,
+      saving_percent: (results && results[0]?.optimization_result?.comparison?.co2_saving_pct) || 0,
+    };
+
+    // LLM 설명에서 파싱 가능한 값이 있으면 우선 적용 (사용자가 원한 '결과 설명에 있는 값으로')
+    try {
+      // 우선 첫 번째 batch result의 LLM 설명을 기준으로 삼음
+      const firstExplanation = results && results[0] && results[0].llm_explanation ? String(results[0].llm_explanation) : null;
+      const parsed = parseKpisFromExplanation(firstExplanation ?? undefined);
+      if (parsed) {
+        if (parsed.total_distance_km !== undefined) newKpis.total_distance_km = Math.round(parsed.total_distance_km * 100) / 100;
+        if (parsed.total_co2_kg !== undefined) newKpis.total_co2_kg = Math.round(parsed.total_co2_kg * 100) / 100;
+        if (parsed.total_time_min !== undefined) newKpis.total_time_min = Math.round(parsed.total_time_min * 100) / 100;
+      }
+    } catch (e) {
+      console.warn('[store] LLM 설명 파싱 실패', e);
+    }
+
+    console.log('[store] 계산된 runHistoryEntries, KPIs:', runHistoryEntries, newKpis);
+
+    return {
+      batchResults: results,
+      kpis: newKpis,
+      runHistory: combinedRunHistory
+    };
+  }),
+
+  addVehicle: (vehicle) => set(state => ({
+    vehicles: [...state.vehicles, vehicle]
+  })),
+
+  updateVehicle: (id, updates) => set(state => ({
+    vehicles: state.vehicles.map(v => v.id === id ? { ...v, ...updates } : v)
+  })),
+
+
+  runOptimization: async (request) => {
+    set({ isOptimizing: true, currentRequest: request });
+
+    try {
+      // API_BASE_URL을 환경변수에서 읽어오도록 수정했습니다. 배포/로컬 테스트 시 NEXT_PUBLIC_API_BASE_URL을 설정하세요.
+      const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL as string) || 'http://localhost:5000';
+
+      // --------------------------------------------------------
+      // 1. 여기가 바로 app.py (백엔드)로 JSON을 전송하는 부분입니다.
+      // --------------------------------------------------------
+      const response = await fetch(`${apiBase}/api/optimize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(request),
+      });
+
+      if (!response.ok) {
+        // 백엔드에서 에러가 났을 때
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      // --------------------------------------------------------
+      // 2. 여기가 app.py가 돌려준 진짜 JSON 결과를 파싱(분해)하는 부분입니다.
+      // --------------------------------------------------------
+      const result = await response.json(); // ⬅️ (3) 백엔드가 준 JSON 결과를 받음
+      const { routes, kpis, run_history_entry } = result; // ⬅️ (4) JSON 분해
+
+      // 3. 받은 "진짜" 데이터로 화면을 업데이트합니다. (표현하기)
+      set({ 
+        routes: routes,     // ⬅️ (5) 진짜 경로
+        kpis: kpis,         // ⬅️ (6) 진짜 지표
+        isOptimizing: false,
+        runHistory: [run_history_entry, ...get().runHistory] // ⬅️ (7) 진짜 실행 이력
+      });
+
+    } catch (error) {
+      // fetch나 파싱 과정에서 에러가 났을 때
+      console.error("최적화 실패 (Optimization failed):", error);
+      set({ isOptimizing: false });
+    }
+  },
+
+  login: (username, password) => {
+    const users = get().users || [];
+    const user = users.find(u => u.username === username && u.password === password);
+    if (user) {
+      set({ isAuthenticated: true, currentUser: username });
+      return true;
+    }
+    return false;
+  },
+
+  register: (username, password) => {
+    const users = get().users || [];
+    if (users.find(u => u.username === username)) return false;
+    set({ users: [...users, { username, password }] });
+    return true;
+  },
+
+
+ 
+ 
+
+  deleteVehicle: (id) => set(state => ({
+
+    vehicles: state.vehicles.filter(v => v.id !== id)
+
+  })),
+
+ 
+
+  addSector: (sector) => set(state => ({
+
+    sectors: [...state.sectors, sector]
+
+  })),
+
+ 
+
+  updateSector: (id, updates) => set(state => ({
+
+    sectors: state.sectors.map(s => s.id === id ? { ...s, ...updates } : s)
+
+  })),
+
+ 
+
+  deleteSector: (id) => set(state => ({
+
+    sectors: state.sectors.filter(s => s.id !== id)
+
+  })),
+
+ 
+
+  addJob: (job) => set(state => ({
+
+    jobs: [...state.jobs, job]
+
+  })),
+
+ 
+
+  updateJob: (index, updates) => set(state => ({
+
+    jobs: state.jobs.map((job, i) => i === index ? { ...job, ...updates } : job)
+
+  })),
+
+ 
+
+  deleteJob: (index) => set(state => ({
+
+    jobs: state.jobs.filter((_, i) => i !== index)
+
+  })),
+  
+  logout: () => set({ isAuthenticated: false, currentUser: null })
+
+}));
