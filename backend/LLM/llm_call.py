@@ -1,43 +1,71 @@
 from flask import Blueprint, request, jsonify
+import os
 import config
+import traceback  # 추가: 예외의 전체 트레이스백 로깅용
 # db_handler.py 에서 DB 관련 함수들을 가져온다고 가정
-from services.db_handler import get_db_connection # 함수 이름 변경 및 추가
+from services.db_handler import get_db_connection  # 함수 이름 변경 및 추가
+import time
 from LLM.llm_db_save import save_run, save_job
-from .lat_lon_kakao import enhance_parsed_data_with_geocoding
-from .llm_sub_def import preprocess_with_sector_data
-import requests
+from LLM.lat_lon_kakao import enhance_parsed_data_with_geocoding
+from LLM.llm_sub_def import preprocess_with_sector_data
+import google.generativeai as genai
+from google.api_core import exceptions as google_exceptions
 import json
-from datetime import datetime # datetime 임포트 추가
+from datetime import datetime, timezone, timedelta # datetime 임포트 추가
 from optimizer.engine import run_optimization
 
 llm_bp = Blueprint('llm', __name__) #flask는 독립적이므로 app이 아닌 blueprint를 사용
 
-
+genai.configure(api_key=config.GOOGLE_API_KEY)
 def call_llm(prompt: str) -> str:
-    # ... (이전 코드와 동일하게 유지하되, 오류 로깅 등 개선된 부분 유지) ...
-    headers = {"Authorization": f"Bearer {config.OPENROUTER_API_KEY}"}
-    payload = {"model": "google/gemini-2.0-flash-exp:free", "messages": [{"role": "user", "content": prompt}]}
-    
-    try:
-        response = requests.post(config.OPENROUTER_API_URL, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-        # 실제 응답 구조 확인 필요
-        return response.json()["choices"][0]["message"]["content"]
-    except requests.exceptions.RequestException as e:
-        print(f"API 호출 오류: {e}")
-        raise # 오류 재발생
-    except (KeyError, IndexError, TypeError) as e: # TypeError 추가
-        print(f"API 응답 구조 오류: {e}, 응답: {response.text if 'response' in locals() else 'N/A'}")
-        raise ValueError("API 응답 구조가 예상과 다릅니다.")
+
+    model = genai.GenerativeModel('gemini-2.5-flash')
+
+    retries = 3
+    delay = 2 # 2초부터 시작
+    for attempt in range(retries):
+        try:
+            # Google API 호출
+            response = model.generate_content(prompt)
+            
+            # (중요) Google API는 응답 본문에 .text로 바로 접근
+            if not response.candidates:
+                 raise ValueError("API 응답에 유효한 'candidates'가 없습니다. (안전 문제로 차단되었을 수 있음)")
+            return response.text
+
+        except (google_exceptions.ResourceExhausted,  # 429 Too Many Requests
+                google_exceptions.ServiceUnavailable, # 5xx 서버 오류
+                google_exceptions.DeadlineExceeded) as e: # 타임아웃
+            
+            if attempt < retries - 1:
+                print(f"⚠️ LLM API 오류 (시도 {attempt + 1}/{retries}): {e}. {delay}초 후 재시도...")
+                time.sleep(delay)
+                delay *= 2
+            else:
+                print(f"❌ LLM API 비-재시도 오류 (최대 재시도): {e}")
+                raise # 최대 재시도 도달 시 즉시 실패
+        
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            # 응답 파싱 오류 또는 안전 문제로 인한 차단 처리
+            print(f"API 응답 구조 오류 또는 차단: {e}")
+            try:
+                # 차단 시 피드백이 있는지 확인
+                print(f"    차단 피드백: {response.prompt_feedback}")
+            except Exception:
+                pass
+            raise ValueError(f"API 응답 구조가 예상과 다르거나 콘텐츠가 차단되었습니다: {e}")
+            
+        except Exception as e:
+            # 기타 예상치 못한 오류
+            print(f"❌ LLM API 알 수 없는 오류: {e}")
+            if attempt < retries - 1:
+                 time.sleep(delay)
+                 delay *= 2
+            else:
+                raise # 최대 재시도 도달
+    raise Exception("LLM 호출 재시도 모두 실패")
 
 
-response = requests.get(
-  url="https://openrouter.ai/api/v1/key",
-  headers={
-    "Authorization": f"Bearer {config.OPENROUTER_API_KEY}"
-  }
-)
-print(json.dumps(response.json(), indent=2))
 
 
 # --- API #1: 자연어 파싱 API ---
@@ -50,14 +78,26 @@ def parse_natural_language():
     if request.method == 'OPTIONS':
         # flask-cors가 응답하므로 여기서 별도 응답 불필요
         # 또는 간단한 200 OK 응답을 보내도 무방 (flask-cors가 헤더 추가)
-        return jsonify(success=True) # 예시 응답
-    
+        return jsonify(success=True)  # 예시 응답
+
     user_input = request.json.get('natural_input')
     if not user_input:
         return jsonify({"error": "natural_input is required"}), 400
 
+    # -- 진단용 로깅: 요청자 정보 출력 (원격 IP, Origin, Host) -----------------
     try:
-        current_date = datetime.now()
+        remote_ip = request.remote_addr
+        origin = request.headers.get('Origin')
+        host_hdr = request.headers.get('Host')
+        print(f"[LLM] parse_natural_language 요청 도착 - remote_addr={remote_ip}, Origin={origin}, Host={host_hdr}")
+    except Exception:
+        print("[LLM] parse_natural_language: 요청자 정보 로깅 중 예외 발생")
+    # ----------------------------------------------------------------------
+
+    try:
+        # KST(UTC+9) 기준 현재 일시
+        kst = timezone(timedelta(hours=9))
+        current_date = datetime.now(tz=kst)
         current_date_str = current_date.strftime('%Y-%m-%d')
         # --- 자연어를 JSON으로 변환 (LLM 호출) ---
         prompt = f"""
@@ -101,7 +141,24 @@ def parse_natural_language():
         5.  lat, lon 값은 항상 null로 설정해주세요.
         사용자 요청: "{user_input}"
         """
-        llm_response_content = call_llm(prompt)
+        try:
+            llm_response_content = call_llm(prompt)
+        except Exception as llm_exc:
+            # LLM 호출 실패 시 상세 로그 기록 (API 인증/차단/타임아웃 문제 확인용)
+            tb = traceback.format_exc()
+            print(f"[LLM] call_llm 실패: {llm_exc}\nTraceback:\n{tb}")
+
+            # 타임아웃 성격이면 504로 응답하게 하고, 디버그 정보는 제한적으로 포함
+            status_code = 500
+            if isinstance(llm_exc, google_exceptions.DeadlineExceeded) or 'timeout' in str(llm_exc).lower():
+                status_code = 504
+
+            return jsonify({
+                "error": "LLM 호출 실패",
+                "details": str(llm_exc),
+                "traceback": tb.splitlines()[-5:],  # 최근 5줄만 반환
+                "remote_addr": request.remote_addr,
+            }), status_code
 
         # LLM 응답에서 JSON 추출 (개선된 방식 유지)
         json_match = None
@@ -126,18 +183,49 @@ def parse_natural_language():
 
         parsed_data = preprocess_with_sector_data(parsed_data)
         parsed_data = enhance_parsed_data_with_geocoding(parsed_data)
+        # 요청 접수 시각(초 단위) 추가: 서버가 표시하는 날짜·시간을 확인할 수 있도록 함
+        parsed_data["submitted_at"] = current_date.isoformat()
 
         return jsonify(parsed_data), 200
 
     except ValueError as ve:
         return jsonify({"error": "LLM 응답 처리 실패", "details": str(ve)}), 500
-    except requests.exceptions.RequestException as re:
-        return jsonify({"error": "LLM API 호출 실패", "details": str(re)}), 502
     except Exception as e:
         print(f"예상치 못한 오류: {e}")
         return jsonify({"error": "내부 서버 오류 발생", "details": str(e)}), 500
 
 # --- API #2: 계획 저장 및 LLM 분석 API ---
+def _ensure_route_distance_fields(optimization_result: dict) -> dict:
+    """
+    Ensure each optimization result route entry exposes total_distance_km / total_distance
+    fields so that the frontend can aggregate KPIs without peeking into nested summaries.
+    """
+    try:
+        results = optimization_result.get("results", [])
+    except AttributeError:
+        return optimization_result
+
+    for route_entry in results:
+        summary = route_entry.get("summary") or {}
+        distance_candidates = [
+            summary.get("total_distance_km"),
+            summary.get("total_distance"),
+            route_entry.get("total_distance")
+        ]
+        distance_value = 0.0
+        for candidate in distance_candidates:
+            try:
+                if candidate is None:
+                    continue
+                distance_value = float(candidate)
+                break
+            except (TypeError, ValueError):
+                continue
+        route_entry["total_distance_km"] = round(distance_value, 3)
+        route_entry["total_distance"] = route_entry["total_distance_km"]
+    return optimization_result
+
+
 @llm_bp.route('/api/save-plan-and-analyze', methods=['POST'])
 def save_plan_and_analyze():
     if request.method == 'OPTIONS':
@@ -164,7 +252,7 @@ def save_plan_and_analyze():
     
     for i, run_item in enumerate(runs_data):
         conn = None
-        run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}_{i}"
+        run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M')}_{i}"
         
         try:
             # ⭐ [추가] 10-1. 좌표 유효성 검사 (DB 저장 전)
@@ -222,6 +310,7 @@ def save_plan_and_analyze():
             # --- 2. 최적화 엔진 실행 ---
             print(f"▶ (Run {i+1}/{len(runs_data)}) 1단계 (DB 저장) 완료. 2단계 (최적화 엔진) 호출 시작 (Run ID: {run_id})")
             optimization_result = run_optimization(run_id, vehicle_ids)
+            optimization_result = _ensure_route_distance_fields(optimization_result)
             
             if optimization_result.get("status") != "success":
                 raise Exception(f"최적화 엔진 실행 실패: {optimization_result.get('message', '알 수 없는 오류')}")
@@ -244,7 +333,8 @@ def save_plan_and_analyze():
             all_run_results.append({
                 "status": "failed",
                 "run_id": run_id,
-                "message": str(e)
+                "message": str(e),
+                "llm_explanation": None # ⬅️ 실패 시에도 필드를 맞춰줍니다.
             })
         finally:
             if conn:
@@ -258,71 +348,107 @@ def save_plan_and_analyze():
     }), 200
         
 
-
-
-
-#-----------------------------------------------------------------------------------------------------
-# --- API #3: 결과 조회 API ---
-# (이전 제안과 거의 동일, 분석 결과만 가져오도록 명확화)
 def generate_route_comparison_explanation(run_id: str):
     """
-    같은 RUN_ID의 여러 경로 옵션을 비교 분석하여 LLM 설명을 생성하고 저장합니다.
+    RUN_SUMMARY에 적재된 Kakao/ORS 경로를 비교해 간단한 설명을 생성한다.
     """
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # 1. RUN_SUMMARY에서 같은 RUN_ID의 모든 경로 옵션 조회
-        cursor.execute("""
-            SELECT ROUTE_OPTION_NAME, TOTAL_DISTANCE_KM, TOTAL_CO2_G, TOTAL_TIME_MIN, SAVING_PCT
+        cursor.execute(
+            """
+            SELECT ROUTE_OPTION_NAME, TOTAL_DISTANCE_KM, TOTAL_CO2_G, TOTAL_TIME_MIN
             FROM RUN_SUMMARY 
             WHERE RUN_ID = :run_id
             ORDER BY ROUTE_OPTION_NAME
-        """, {'run_id': run_id})
-        
+            """,
+            {'run_id': run_id}
+        )
         routes = cursor.fetchall()
-        if not routes:
-            print(f"⚠️ RUN_ID '{run_id}'에 대한 경로 데이터가 없습니다.")
-            return None
-            
-        if len(routes) < 2:
-            print(f"⚠️ RUN_ID '{run_id}'에 비교할 경로 옵션이 2개 이상 필요합니다.")
-            return None
-        
-        # 2. 데이터를 딕셔너리 리스트로 변환
+        if not routes or len(routes) < 2:
+            msg = f"RUN_ID '{run_id}'에 비교 가능한 경로가 1개 이하입니다."
+            print(msg)
+            single_text = "Kakao/ORS 경로가 한 개만 존재해 비교 결과를 만들지 못했습니다."
+            if routes:
+                cursor.execute(
+                    """
+                    UPDATE RUN_SUMMARY 
+                    SET LLM_EXPLANATION = :llm_explanation
+                    WHERE RUN_ID = :run_id AND ROWNUM = 1
+                    """,
+                    {'llm_explanation': single_text, 'run_id': run_id}
+                )
+                conn.commit()
+            return single_text
+
         columns = [col[0].lower() for col in cursor.description]
         route_data = [dict(zip(columns, route)) for route in routes]
-        
-        # 3. LLM 분석 프롬프트 생성
-        analysis_prompt = create_route_comparison_prompt(route_data, run_id)
-        
-        # 4. LLM 호출하여 분석 결과 생성
-        llm_explanation = call_llm(analysis_prompt)
-        
-        # 5. "OR-Tools Optimal" 경로의 LLM_EXPLANATION 업데이트
-        cursor.execute("""
+
+        try:
+            def provider_label(name: str) -> str:
+                lname = (name or "").lower()
+                if "kakao" in lname:
+                    return "Kakao"
+                if "ors" in lname:
+                    return "ORS"
+                return name or "경로"
+
+            best = min(route_data, key=lambda r: r.get("total_co2_g", 1e12))
+            other_candidates = [r for r in route_data if r is not best]
+            other = other_candidates[0] if other_candidates else None
+
+            if other is None:
+                llm_explanation = "두 번째 경로를 찾을 수 없어 비교 결과가 없습니다."
+            else:
+                co2_diff_g = (other.get("total_co2_g", 0) or 0) - (best.get("total_co2_g", 0) or 0)
+                co2_diff_kg = co2_diff_g / 1000.0
+                co2_pct = 0.0
+                if other.get("total_co2_g"):
+                    co2_pct = (co2_diff_g / other.get("total_co2_g")) * 100
+
+                dist_diff = (best.get("total_distance_km", 0) or 0) - (other.get("total_distance_km", 0) or 0)
+                time_diff = (best.get("total_time_min", 0) or 0) - (other.get("total_time_min", 0) or 0)
+
+                best_label = provider_label(best.get("route_option_name"))
+                other_label = provider_label(other.get("route_option_name"))
+
+                llm_explanation = (
+                    f"{best_label} 경로가 CO2 기준 더 우수합니다. "
+                    f"{other_label} 대비 CO2 {co2_diff_kg:.2f} kg ({co2_pct:.1f}%) 절감, "
+                    f"거리 {dist_diff:+.2f} km, 시간 {time_diff:+.2f} 분 차이가 있습니다."
+                )
+        except Exception:
+            analysis_prompt = create_route_comparison_prompt(route_data, run_id)
+            try:
+                llm_explanation = call_llm(analysis_prompt)
+            except Exception:
+                llm_explanation = "Kakao? ORS ??? ??????. CO2? ?? ?? ??? ?????."
+
+        cursor.execute(
+            """
             UPDATE RUN_SUMMARY 
             SET LLM_EXPLANATION = :llm_explanation
-            WHERE RUN_ID = :run_id AND ROUTE_OPTION_NAME = 'OR-Tools Optimal'
-        """, {
-            'llm_explanation': llm_explanation,
-            'run_id': run_id
-        })
-        
+            WHERE RUN_ID = :run_id
+              AND ROUTE_OPTION_NAME IN ('CO2 Optimal Route','Our Eco Optimal Route','Kakao Route','ORS Route','Distance Optimal Route')
+            """,
+            {'llm_explanation': llm_explanation, 'run_id': run_id}
+        )
         conn.commit()
-        print(f"✅ 경로 비교 분석 완료 및 LLM_EXPLANATION 저장 (RUN_ID: {run_id})")
+        print(f"LLM 비교 설명이 업데이트되었습니다 (RUN_ID: {run_id})")
         return llm_explanation
-        
     except Exception as e:
         if conn:
             conn.rollback()
-        print(f"❌ 경로 비교 분석 중 오류: {e}")
+        print(f"LLM 비교 설명 생성 중 오류: {e}")
         return None
     finally:
         if conn:
             conn.close()
+#-------------------------------------------------------------------------------------------------
 
+
+#-------------------------------------------------------------------------------------------------
 def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
     """
     경로 비교 분석을 위한 LLM 프롬프트 생성
@@ -354,31 +480,27 @@ def create_route_comparison_prompt(route_data: list, run_id: str) -> str:
     
     prompt += f"""
 [분석 요청]
-다음 내용을 중심으로 "OR-Tools Optimal" 경로가 다른 경로에 비해 왜 가장 우수한지 분석해주세요:
-
-1. **거리 효율성**: 총 주행 거리 비교 및 분석
-2. **환경적 영향**: CO2 배출량 차이와 환경적 이점
-3. **시간 효율성**: 소요 시간 비교 및 운영 효율성
-4. **종합 평가**: 세 가지 요소를 종합적으로 고려한 최적의 선택 이유
-5. **비즈니스 관점**: 비용 절감, 고객 서비스, 환경 규제 준수 측면에서의 장점
+다음 내용을 중심으로 "Our Eco Optimal Route" 경로의 좋은 점을 각 항목당 간결하고(2줄 이내) 핵심만 말해주세요!! <!--"Our Eco Optimal Route" 경로는 다른 여러개의 경로들 중에 co2 발생이 가장 적은 경로 입니다.-->
+ 
+1. 🌱환경적 영향: CO2 배출량에 따른 환경적 이점
+2. ⏲️시간 효율성: 소요 시간 비교 및 운영 효율성
+3. 🤝🏼비즈니스 관점: 비용 절감, 고객 서비스, 환경 규제 준수 측면에서의 장점
 
 [작성 지침]
 - 데이터에 기반한 객관적인 분석을 제공해주세요
 - 숫자와 수치를 구체적으로 언급하며 비교해주세요
 - 전문적이지만 이해하기 쉽게 설명해주세요
-- 한국어로 답변해주세요
+- '한국어'로 답변해주세요
 - "Our Eco Optimal Route" 경로의 우수성을 강조해주세요
+- 앞 이모지 꼭 넣어주세요.
 - 분석 결과는 RUN_SUMMARY 테이블의 LLM_EXPLANATION 컬럼에 저장될 것입니다
 
 분석 결과:
 """
     
     return prompt
+
 #-----------------------------------------------------------------------------------------------------
-
-
-
-
 def group_assignments_by_vehicle(assignments_data: list) -> list:
     """
     DB에서 조회된 assignments 딕셔너리 리스트를
@@ -433,4 +555,3 @@ def group_assignments_by_vehicle(assignments_data: list) -> list:
 
     # 딕셔너리의 값들(Route 객체들)을 리스트로 변환하여 반환
     return list(routes_dict.values())
-

@@ -186,7 +186,13 @@ def get_optimizer_input_data(run_id: str, vehicle_ids: List[str]) -> Dict:
         cursor.execute(vehicle_query, bind_vars)
         vehicle_columns = [d[0].lower() for d in cursor.description]
         vehicle_rows_tuples = cursor.fetchall()
-        result["vehicles"] = [dict(zip(vehicle_columns, row)) for row in vehicle_rows_tuples]
+        vehicles_by_id = {row[0]: dict(zip(vehicle_columns, row)) for row in vehicle_rows_tuples}
+        ordered_vehicles = []
+        for vid in vehicle_ids:
+            vehicle = vehicles_by_id.get(vid)
+            if vehicle:
+                ordered_vehicles.append(vehicle)
+        result["vehicles"] = ordered_vehicles
 
         return result
 
@@ -255,6 +261,229 @@ def save_optimization_results(run_id: str, summary_data: Dict, assignments_data:
         conn.rollback()
         print(f"❌ DB 저장 중 오류 발생: {e}")
         raise e
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_dashboard_data(limit: int = 20) -> dict:
+    """
+    대시보드용 요약 데이터를 반환합니다.
+    반환 구조:
+    {
+      "run_history": [ { run_id, date, total_distance_km, total_co2_kg, total_time_min, saving_pct } ... ],
+      "kpis": { total_distance_km, total_co2_kg, total_time_min, saving_percent },
+      "batch_results": [ { run_id, optimization_result: { status, run_id, results: [ { route_name, total_distance_km, total_co2_g, total_time_min, saving_pct } ] } } ... ]
+    }
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # RUN_SUMMARY와 RUNS를 조인하여 최근 run_id별 집계 조회
+        cursor.execute(f"""
+            SELECT rs.run_id, r.run_date, rs.route_option_name, rs.total_distance_km, rs.total_co2_g, rs.total_time_min, rs.saving_pct
+            FROM RUN_SUMMARY rs
+            JOIN RUNS r ON rs.run_id = r.run_id
+            ORDER BY r.run_date DESC
+        """)
+
+        rows = cursor.fetchall()
+        if not rows:
+            return {"run_history": [], "kpis": {"total_distance_km": 0, "total_co2_kg": 0, "total_time_min": 0, "saving_percent": 0}, "batch_results": []}
+
+        # 그룹화: run_id -> list of route options
+        runs_map = {}
+        for row in rows:
+            run_id = row[0]
+            run_date = row[1]
+            route_name = row[2]
+            dist = row[3] or 0
+            co2_g = row[4] or 0
+            time_min = row[5] or 0
+            saving_pct = row[6] or 0
+
+            if run_id not in runs_map:
+                runs_map[run_id] = {
+                    "run_id": run_id,
+                    "date": run_date.isoformat() if hasattr(run_date, 'isoformat') else str(run_date),
+                    "routes": [],
+                }
+            runs_map[run_id]["routes"].append({
+                "route_name": route_name,
+                "total_distance_km": float(dist),
+                "total_co2_g": float(co2_g),
+                "total_time_min": float(time_min),
+                "saving_pct": float(saving_pct)
+            })
+
+        # 정렬 및 제한
+        run_items = list(runs_map.values())
+        run_items.sort(key=lambda x: x['date'], reverse=True)
+        run_items = run_items[:limit]
+
+        # run_history 및 batch_results 생성
+        run_history = []
+        batch_results = []
+        agg_distance = 0.0
+        agg_co2_kg = 0.0
+        agg_time = 0.0
+
+        for run in run_items:
+            total_distance = sum(r['total_distance_km'] for r in run['routes'])
+            total_co2_kg = sum(r['total_co2_g'] for r in run['routes']) / 1000.0
+            total_time = sum(r['total_time_min'] for r in run['routes'])
+            saving_pct = max((r.get('saving_pct', 0) for r in run['routes']), default=0)
+
+            run_history.append({
+                "run_id": run['run_id'],
+                "date": run['date'],
+                "total_distance": round(total_distance, 2),
+                "total_co2": round(total_co2_kg, 3),
+                "total_time_min": round(total_time, 1),
+                "served_jobs": 0
+            })
+
+            batch_results.append({
+                "status": "success",
+                "run_id": run['run_id'],
+                "optimization_result": {
+                    "status": "success",
+                    "run_id": run['run_id'],
+                    "results": run['routes']
+                },
+                "llm_explanation": None
+            })
+
+            agg_distance += total_distance
+            agg_co2_kg += total_co2_kg
+            agg_time += total_time
+
+        kpis = {
+            "total_distance_km": round(agg_distance, 2),
+            "total_co2_kg": round(agg_co2_kg, 3),
+            "total_time_min": round(agg_time, 1),
+            "saving_percent": 0
+        }
+
+        return {"run_history": run_history, "kpis": kpis, "batch_results": batch_results}
+
+    except Exception as e:
+        print(f"get_dashboard_data 오류: {e}")
+        return {"run_history": [], "kpis": {"total_distance_km": 0, "total_co2_kg": 0, "total_time_min": 0, "saving_percent": 0}, "batch_results": []}
+    finally:
+        try:
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
+
+
+def _coerce_date_str(value) -> str:
+    """Helper: datetime/date -> ISO string."""
+    if isinstance(value, dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, dt.date):
+        return value.isoformat()
+    return str(value)
+
+
+def get_weekly_co2_trend(from_date: dt.date, to_date: dt.date,
+                          vehicle_id: Optional[str] = None,
+                          sector_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    주간 CO2 배출량 추이 (일 단위) 데이터를 반환합니다.
+    vehicle_id, sector_id(센터=섹터) 필터를 사용합니다.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT TRUNC(r.run_date) AS run_day,
+                   SUM(a.co2_g) AS total_co2_g
+            FROM ASSIGNMENTS a
+            JOIN RUNS r ON a.run_id = r.run_id
+            LEFT JOIN JOBS j ON a.end_job_id = j.job_id
+            WHERE r.run_date BETWEEN :from_date AND :to_date
+              AND a.route_option_name IN (:route_option, :route_option_legacy)
+        """
+        params = {
+            "from_date": from_date,
+            "to_date": to_date,
+            "route_option": "CO2 Optimal Route",
+            "route_option_legacy": "Our Eco Optimal Route"
+        }
+        if vehicle_id:
+            query += " AND a.vehicle_id = :vehicle_id"
+            params["vehicle_id"] = vehicle_id
+        if sector_id:
+            query += " AND j.sector_id = :sector_id"
+            params["sector_id"] = sector_id
+
+        query += " GROUP BY TRUNC(r.run_date) ORDER BY TRUNC(r.run_date)"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [
+            {
+                "date": _coerce_date_str(row[0]),
+                "co2_kg": round((row[1] or 0) / 1000.0, 3)
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"get_weekly_co2_trend 오류: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_vehicle_distance_stats(from_date: dt.date, to_date: dt.date,
+                               vehicle_id: Optional[str] = None,
+                               sector_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    차량별 주행거리 데이터를 반환합니다.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        query = """
+            SELECT a.vehicle_id,
+                   SUM(a.distance_km) AS total_distance_km
+            FROM ASSIGNMENTS a
+            JOIN RUNS r ON a.run_id = r.run_id
+            LEFT JOIN JOBS j ON a.end_job_id = j.job_id
+            WHERE r.run_date BETWEEN :from_date AND :to_date
+              AND a.route_option_name IN (:route_option, :route_option_legacy)
+        """
+        params = {
+            "from_date": from_date,
+            "to_date": to_date,
+            "route_option": "CO2 Optimal Route",
+            "route_option_legacy": "Our Eco Optimal Route"
+        }
+        if vehicle_id:
+            query += " AND a.vehicle_id = :vehicle_id"
+            params["vehicle_id"] = vehicle_id
+        if sector_id:
+            query += " AND j.sector_id = :sector_id"
+            params["sector_id"] = sector_id
+
+        query += " GROUP BY a.vehicle_id ORDER BY total_distance_km DESC"
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [
+            {
+                "vehicle_id": row[0],
+                "distance_km": round(row[1] or 0, 2)
+            }
+            for row in rows
+            if row[0]
+        ]
+    except Exception as e:
+        print(f"get_vehicle_distance_stats 오류: {e}")
+        return []
     finally:
         cursor.close()
         conn.close()
