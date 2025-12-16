@@ -2,6 +2,7 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import Header from '@/components/layout/Header';
+import AuthGuard from '@/components/auth/AuthGuard';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -16,10 +17,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko">
-      <body className={inter.className}>
+    <html lang="ko" suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen flex flex-col bg-background text-foreground`}>
         <Header />
-        <main className="min-h-screen">
+        <AuthGuard />
+        <main className="flex-1 h-full">
           {children}
         </main>
       </body>

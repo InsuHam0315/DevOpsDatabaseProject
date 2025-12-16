@@ -5,39 +5,45 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MapPin, MessageSquare, FileText, AlertCircle } from 'lucide-react'; // AlertCircle 추가
 // import { useStore } from '@/lib/store'; // 💡 runOptimization은 직접 호출하지 않으므로 제거 가능
-import { OptimizationRequest } from '@/lib/types';
+import { OptimizationRequest, BatchResult } from '@/lib/types'; //LLM 결과표출 추가로 인한 수정
 import NaturalLanguageInput from '@/components/plan/natural-language-input';
 import FormInput from '@/components/plan/form-input';
+import { useStore } from '@/lib/store'
+
 // 💡 알림(Toast) 사용을 위해 import (선택 사항)
-// import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner'; //LLM 결과표출 추가로 인한 수정
 
 // 💡 백엔드 API 기본 URL (natural-language-input.tsx와 동일하게 사용)
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
+// 기본값을 로컬호스트 대신 개발 서버 네트워크 IP로 설정하여 다른 디바이스에서 접근 가능하게 함
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://203.234.62.83:5000';
 
 export default function PlanPage() {
   const router = useRouter();
   // const { runOptimization } = useStore(); // 💡 제거
-  const [parsedRequest, setParsedRequest] = useState<OptimizationRequest | null>(null);
+  // parsedResult는 NaturalLanguageInput에서 전달되는 ParsedResult를 그대로 받습니다.
+  const [parsedRequest, setParsedRequest] = useState<any | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false); // 💡 제출 로딩 상태
   const [submitError, setSubmitError] = useState<string | null>(null); // 💡 제출 오류 상태
-
+  const [isOptimizing, setIsOptimizing] = useState(false); //LLM 결과표출 추가로 인한 수정
+  const setBatchResults = useStore((state) => state.setBatchResults); //LLM 결과표출 추가로 인한 수정
   // 💡 폼 입력에서도 사용할 수 있도록 onParsed 핸들러를 분리
-  const handleParsed = (request: OptimizationRequest | null) => {
+  const handleParsed = (request: any | null) => {
     setParsedRequest(request);
     setSubmitError(null); // 새로운 파싱 결과 받으면 오류 초기화
   };
 
   // 💡 API 호출 함수 (폼 입력에서도 사용 가능하도록 수정)
-  const handleOptimize = async (request: OptimizationRequest) => {
+  const handleOptimize = async (request: any | null) => { 
     if (!request) {
-       // 💡 toast({ variant: "destructive", title: "오류", description: "최적화할 데이터가 없습니다." });
-       setSubmitError("최적화할 데이터가 없습니다.");
-       return;
+      setSubmitError('파싱된 요청이 없습니다.');
+      return;
     }
 
-    setIsSubmitting(true);
+    setIsOptimizing(true);
     setSubmitError(null);
-
+    toast.loading('최적화가 시작되었습니다. 잠시만 기다려주세요...', {
+      id: 'optimization-toast',
+    });
     try {
       // 💡 백엔드 /api/save-plan-and-analyze 호출
       const response = await fetch(`${API_BASE_URL}/api/save-plan-and-analyze`, {
@@ -45,34 +51,42 @@ export default function PlanPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        // 💡 natural_input 필드가 필요하다면 여기서 추가 가능
+        // request는 ParsedResult 구조(백엔드에서 기대하는 runs 포함)입니다.
         body: JSON.stringify(request),
       });
+//------------------------------------------------------------------------------------- LLM 결과표출 추가로 인한 수정
+      if (response.ok) {
+        // 성공 시
+        const data: { message: string; batch_results: BatchResult[] } = await response.json();
 
-      if (!response.ok) {
+        // 2단계에서 만든 store에 결과 저장
+        setBatchResults(data.batch_results || []);
+
+        toast.success('최적화 성공!', {
+          id: 'optimization-toast',
+          description: data.message || '결과 페이지로 이동합니다.',
+        });
+
+        router.push('/routes'); // 결과 페이지로 이동
+
+      } else {
+        // 실패 시
         const errorData = await response.json();
         throw new Error(errorData.details || `API 오류 (${response.status})`);
       }
 
-      const result = await response.json();
-      const runId = result.run_id;
-
-      // 💡 성공 알림 (선택 사항)
-      // toast({ title: "요청 성공", description: `분석이 완료되었습니다. (ID: ${runId})` });
-
-      // 💡 결과 페이지로 이동 (run_id 전달)
-      router.push(`/routes?run_id=${runId}`);
-
     } catch (err: any) {
-      console.error("최적화 실행 오류:", err);
-      setSubmitError(err.message || "최적화 실행 중 오류가 발생했습니다.");
-      // 💡 오류 알림 (선택 사항)
-      // toast({ variant: "destructive", title: "요청 실패", description: err.message });
+      console.error('최적화 요청 실패:', err);
+      setSubmitError(err.message || '서버 오류가 발생했습니다.');
+      toast.error('최적화 실패', {
+        id: 'optimization-toast',
+        description: err.message,
+      });
     } finally {
-      setIsSubmitting(false);
+      setIsOptimizing(false); // ⬅️ [수정] isSubmitting 대신 isOptimizing 사용
     }
   };
-
+//-------------------------------------------------------------------------------------
   return (
     <div className="container mx-auto py-8 space-y-8">
       {/* ... (Header는 동일) ... */}
@@ -123,10 +137,10 @@ export default function PlanPage() {
                     <button
                       onClick={() => handleOptimize(parsedRequest)}
                       // 💡 로딩 상태에 따라 비활성화 및 텍스트 변경
-                      disabled={isSubmitting}
+                      disabled={isOptimizing}
                       className="px-8 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
-                      {isSubmitting ? (
+                      {isOptimizing ? (
                         <>
                            <div className="w-4 h-4 border-2 border-current border-t-transparent animate-spin rounded-full" />
                            <span>처리 중...</span>

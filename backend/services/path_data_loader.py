@@ -2,19 +2,16 @@
 import requests
 from typing import Dict, List, Tuple, Any, Optional
 import math
-import requests.exceptions # 예외 처리 import 추가
+import requests.exceptions  # 예외 처리 import 추가
 
-# [필수 설정] config 파일에서 REST API 키를 가져옵니다.
-try:
-    import config
-    # config.py에 정의된 KAKAOMAP_REST_API 변수를 가져와서 'KAKAO_API_KEY'에 저장합니다.
-    KAKAO_API_KEY = config.KAKAOMAP_REST_API 
-except ImportError:
-    print("⚠️ WARNING: config.py를 찾을 수 없습니다. API 키를 설정해 주세요.")
-    KAKAO_API_KEY = "YOUR_KAKAOMAP_REST_API" # 폴백 키
+import config
 
-# --- Kakao API URL ---
+KAKAO_API_KEY = getattr(config, "KAKAOMAP_REST_API", None)
+ORS_API_KEY = getattr(config, "ORS_API_KEY", None)
+
+# --- API URL ---
 KAKAO_DIRECTIONS_URL = "https://apis-navi.kakaomobility.com/v1/directions"
+ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions"
 
 # --------------------------------------------------------------------------
 # 1. 단일 경로 조회 함수 (Single Route Lookup - VRP 행렬 생성용)
@@ -156,6 +153,7 @@ def get_kakao_route_alternatives(origin_coord: Tuple[float, float], destination_
                 segments = []
 
             all_routes.append({
+                "provider": "kakao",
                 "route_name": route_name,
                 "total_distance_km": total_distance_km,
                 "total_time_sec": total_time_sec,
@@ -176,6 +174,126 @@ def get_kakao_route_alternatives(origin_coord: Tuple[float, float], destination_
 # --------------------------------------------------------------------------
 # 3. OR-Tools 행렬 생성 함수 (Matrix Generation - VRP 시나리오용)
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# 2-b. ORS 대안 경로 조회 (P2P 시나리오용)
+# --------------------------------------------------------------------------
+def _haversine_km(lon1, lat1, lon2, lat2):
+    r = 6371.0
+    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return r * c
+
+
+def get_ors_route_alternatives(origin_coord: Tuple[float, float], destination_coord: Tuple[float, float],
+                               profile: str = "driving-car") -> Optional[List[Dict]]:
+    """
+    OpenRouteService Directions API로 대안 경로를 요청합니다.
+    """
+    if not ORS_API_KEY:
+        return None
+
+    headers = {
+        "Authorization": ORS_API_KEY,
+        "Content-Type": "application/json"
+    }
+    base_payload = {
+        "coordinates": [
+            [origin_coord[0], origin_coord[1]],
+            [destination_coord[0], destination_coord[1]]
+        ],
+        "instructions": False
+    }
+    payload_with_alt = {
+        **base_payload,
+        "alternative_routes": {"target_count": 3, "share_factor": 0.6, "weight_factor": 1.4},
+    }
+
+    def _request(payload):
+        resp = requests.post(f"{ORS_DIRECTIONS_URL}/{profile}/json", json=payload, headers=headers, timeout=25)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("features"):
+            return data.get("features")
+        if data.get("routes"):
+            # 표준 directions 응답을 feature 형태로 정규화
+            feats = []
+            for r in data.get("routes", []):
+                feats.append({
+                    "properties": {"summary": r.get("summary", {})},
+                    "geometry": r.get("geometry", {})
+                })
+            return feats
+        return []
+
+    try:
+        features = []
+        try:
+            features = _request(payload_with_alt)
+        except requests.exceptions.HTTPError as http_err:
+            status = getattr(http_err.response, "status_code", None)
+            if status == 400:
+                print("[WARN] ORS alternative_routes 거절됨, 단일 경로로 재시도합니다.")
+                features = _request(base_payload)
+            else:
+                raise
+
+        if not features:
+            return None
+
+        routes = []
+        for idx, feat in enumerate(features):
+            summary = feat.get("properties", {}).get("summary", {}) or {}
+            total_distance_km = (summary.get("distance") or 0) / 1000.0
+            total_time_sec = summary.get("duration") or 0.0
+            geometry = feat.get("geometry", {}) or {}
+            coords = []
+            if isinstance(geometry, dict):
+                coords = geometry.get("coordinates") or []
+
+            segments = []
+            if len(coords) >= 2:
+                segment_lengths = []
+                for i in range(len(coords) - 1):
+                    lon1, lat1 = coords[i]
+                    lon2, lat2 = coords[i + 1]
+                    segment_lengths.append(_haversine_km(lon1, lat1, lon2, lat2))
+                total_seg_len = sum(segment_lengths) or 1e-6
+                for i, seg_len in enumerate(segment_lengths):
+                    seg_time = total_time_sec * (seg_len / total_seg_len) if total_time_sec else 0.0
+                    segments.append({
+                        "link_id": None,
+                        "distance_km": seg_len,
+                        "base_time_sec": seg_time
+                    })
+
+            routes.append({
+                "provider": "ors",
+                "route_name": f"ORS_ALT_{idx+1}",
+                "total_distance_km": total_distance_km,
+                "total_time_sec": total_time_sec,
+                "segments": segments,
+                "polyline": coords
+            })
+        return routes
+    except Exception as e:
+        print(f"[WARN] ORS Directions 호출 오류: {e}")
+        return None
+
+
+# --------------------------------------------------------------------------
+# 2-c. 복합 대안 경로 (Kakao + ORS)
+# --------------------------------------------------------------------------
+def get_combined_route_alternatives(origin_coord: Tuple[float, float], destination_coord: Tuple[float, float]) -> List[Dict]:
+    candidates: List[Dict] = []
+    kakao_routes = get_kakao_route_alternatives(origin_coord, destination_coord) or []
+    ors_routes = get_ors_route_alternatives(origin_coord, destination_coord) or []
+    candidates.extend(kakao_routes)
+    candidates.extend(ors_routes)
+    return candidates
 
 def create_kakao_route_matrices(locations: List[Dict]) -> Tuple[List[List[float]], List[List[float]], Dict[Tuple[int, int], List[Dict]]]:
     """

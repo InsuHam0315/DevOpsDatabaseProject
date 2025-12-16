@@ -2,110 +2,290 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import traceback
 import sys
+from datetime import datetime, date
+
 # --------------------------------------------------------------------------
-# ⭐ [다른 팀원 작업] LLM 관련 모듈 임포트 유지
+# [Optional] LLM Blueprint loading
 # --------------------------------------------------------------------------
-# LLM 모듈이 존재하지 않을 경우를 대비하여 ImportError를 무시하고 진행
 try:
+    # Expecting: backend/LLM/llm_call.py with Blueprint named llm_bp
     from LLM.llm_call import llm_bp
     LLM_BLUEPRINT_AVAILABLE = True
-except ImportError:
-    print("⚠️ WARNING: LLM.llm_call.llm_bp 모듈을 찾을 수 없습니다. LLM 기능은 비활성화됩니다.")
+except ImportError as e:
+    print(f"[WARN] LLM blueprint not loaded: {e}")
     LLM_BLUEPRINT_AVAILABLE = False
 
-
 # --------------------------------------------------------------------------
-# ⭐ [우리 팀 작업] 서비스 및 최적화 모듈 임포트
+# Core services & optimizer engine imports
 # --------------------------------------------------------------------------
 try:
-    from services.db_handler import test_db_connection
+    from services.db_handler import (
+        test_db_connection,
+        get_dashboard_data,
+        get_weekly_co2_trend,
+        get_vehicle_distance_stats,
+    )
     from optimizer.engine import run_optimization
 except ImportError as e:
-    print(f"❌ FATAL ERROR: 필수 모듈 임포트 실패: {e}. 'backend' 폴더에서 실행 중인지 확인하세요.")
+    print(
+        f"[FATAL] Failed to import core services: {e}. "
+        f"Make sure you are running from the 'backend' directory."
+    )
     sys.exit(1)
 
-
-# 플라스크 앱(서버)을 생성합니다.
+# --------------------------------------------------------------------------
+# Flask app setup
+# --------------------------------------------------------------------------
 app = Flask(__name__)
 CORS(app)
 
-# LLM 블루프린트가 사용 가능할 경우에만 등록 (다른 팀원 작업 유지)
+
+def _parse_iso_to_date(value: str) -> date:
+    """Parse string into a date object (ISO 8601 or YYYY-MM-DD)."""
+    try:
+        return datetime.fromisoformat(value).date()
+    except ValueError:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def _extract_date_range_from_request():
+    """Extract fromDate / toDate query parameters as date objects."""
+    from_param = request.args.get("fromDate")
+    to_param = request.args.get("toDate")
+    if not from_param or not to_param:
+        raise ValueError("Query parameters 'fromDate' and 'toDate' are required.")
+    return _parse_iso_to_date(from_param), _parse_iso_to_date(to_param)
+
+
+def _clean_optional_param(value: str):
+    """Return None for empty/whitespace strings, otherwise trimmed value."""
+    if not value:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+# Register LLM blueprint if available
 if LLM_BLUEPRINT_AVAILABLE:
     app.register_blueprint(llm_bp)
-    print("✅ LLM 블루프린트가 성공적으로 등록되었습니다.")
+    print("[INFO] LLM blueprint registered.")
 else:
-    print("❌ LLM 블루프린트 등록 스킵.")
+    print("[INFO] LLM blueprint not registered.")
 
 
-# --- 기본 및 테스트 엔드포인트 ---
+# --------------------------------------------------------------------------
+# Basic health-check endpoints
+# --------------------------------------------------------------------------
 
-@app.route('/')
+@app.route("/")
 def index():
-    """서버 상태 확인용 기본 엔드포인트"""
-    return jsonify({"status": "ok", "message": "Eco Logistics Optimizer API is running!"})
+    """Health check root endpoint."""
+    return jsonify(
+        {"status": "ok", "message": "Eco Logistics Optimizer API is running!"}
+    )
 
-@app.route('/test-db')
+
+@app.route("/test-db")
 def db_connection_test_endpoint():
-    """DB 연결 테스트용 엔드포인트 (기존 코드 유지)"""
+    """Simple DB connection test endpoint."""
     try:
         result = test_db_connection()
         status_code = 200 if result.get("status") == "success" else 500
         return jsonify(result), status_code
     except Exception as e:
-        print(f"❌ /test-db 처리 중 오류: {traceback.format_exc()}")
-        return jsonify({"status": "failed", "error": f"DB 테스트 중 서버 오류: {e}"}), 500
+        print(f"[ERROR] /test-db failed: {traceback.format_exc()}")
+        return (
+            jsonify(
+                {
+                    "status": "failed",
+                    "error": f"DB connection test failed: {e}",
+                }
+            ),
+            500,
+        )
 
 
-# --- ⭐ 메인 최적화 API 엔드포인트 (우리 팀의 핵심 성과) ⭐ ---
+# --------------------------------------------------------------------------
+# Optimization main API
+# --------------------------------------------------------------------------
 
-@app.route('/optimize', methods=['POST'])
+@app.route("/optimize", methods=["POST"])
 def handle_optimization_request():
     """
-    최적화 요청(run_id, vehicle_ids)을 받아 engine을 실행하고 결과를 반환합니다.
+    Handle optimization request from frontend and return summarized results.
+    Expected JSON:
+    {
+        "run_id": "RUN_...",
+        "vehicle_ids": ["TRK01", "TRK02", ...]
+    }
     """
-    print("Received optimization request...")
+    print("[INFO] Received optimization request...")
     try:
-        # 1. 요청 데이터 받기 및 검증
         data = request.get_json()
         if not isinstance(data, dict):
-            raise ValueError("요청 본문이 유효한 JSON 객체가 아닙니다.")
-        if 'run_id' not in data or 'vehicle_ids' not in data:
-            raise ValueError("요청 본문에 'run_id'와 'vehicle_ids'가 필요합니다.")
+            raise ValueError("Request body must be a valid JSON object.")
+        if "run_id" not in data or "vehicle_ids" not in data:
+            raise ValueError("Fields 'run_id' and 'vehicle_ids' are required.")
 
-        run_id = data['run_id']
-        vehicle_ids = data['vehicle_ids']
+        run_id = data["run_id"]
+        vehicle_ids = data["vehicle_ids"]
         if not isinstance(vehicle_ids, list):
-            raise ValueError("'vehicle_ids'는 리스트 형태여야 합니다.")
+            raise ValueError("'vehicle_ids' must be a list.")
 
-        print(f"   Run ID: {run_id}, Vehicles: {vehicle_ids}")
+        print(f"[INFO] Run ID: {run_id}, Vehicles: {vehicle_ids}")
 
-        # 2. 최적화 엔진 실행 (engine.py는 인자 2개만 받음)
-        # 이 함수 내에서 Kakao API 호출, OR-Tools 최적화, CO2 계산 및 DB 저장이 모두 수행됩니다.
+        # Call optimization engine (run_optimization defined in optimizer/engine.py)
         optimization_result = run_optimization(run_id, vehicle_ids)
 
-        # 3. 최적화 결과 반환
+        # Normalize response for frontend
         if isinstance(optimization_result, dict):
             status = optimization_result.get("status", "unknown")
             if status == "success":
-                print("   Optimization successful, returning results.")
-                return jsonify(optimization_result), 200
+                print("[INFO] Optimization successful, building response payload.")
+
+                routes = []
+                for r in optimization_result.get("results", []):
+                    summary = r.get("summary") or {}
+                    route_distance = float(summary.get("total_distance_km") or 0.0)
+                    route_co2_g = float(summary.get("total_co2_g") or 0.0)
+                    route_time = float(summary.get("total_time_min") or 0.0)
+
+                    routes.append(
+                        {
+                            "route_name": r.get("route_name"),
+                            "summary": summary,
+                            "total_distance_km": route_distance,
+                            "total_co2_g": route_co2_g,
+                            "total_co2_kg": round(route_co2_g / 1000.0, 3),
+                            "total_time_min": route_time,
+                        }
+                    )
+
+                # Aggregate KPIs using normalized route entries
+                total_distance = sum(route.get("total_distance_km", 0.0) for route in routes)
+                total_co2_g = sum(route.get("total_co2_g", 0.0) for route in routes)
+                total_time_min = sum(route.get("total_time_min", 0.0) for route in routes)
+
+                comparison = optimization_result.get("comparison") or {}
+                kpis = {
+                    "total_distance_km": round(total_distance, 2),
+                    "total_co2_kg": round(total_co2_g / 1000.0, 3),
+                    "total_time_min": round(total_time_min, 2),
+                    "saving_percent": comparison.get("co2_saving_pct", 0.0),
+                }
+
+                run_history_entry = {
+                    "run_id": optimization_result.get("run_id"),
+                    "timestamp": datetime.now().isoformat(),
+                    "result_summary": routes[0] if routes else None,
+                }
+
+                return (
+                    jsonify(
+                        {
+                            "status": "success",
+                            "routes": routes,
+                            "kpis": kpis,
+                            "run_history_entry": run_history_entry,
+                        }
+                    ),
+                    200,
+                )
+
             elif status == "warning":
-                print("   Optimization succeeded with warnings (DB Save Fail, etc.).")
+                print("[WARN] Optimization succeeded with warnings.")
                 return jsonify(optimization_result), 206
             else:
                 return jsonify(optimization_result), 500
         else:
-            return jsonify({"status": "failed", "message": "최적화 결과 처리 중 예상치 못한 오류 발생"}), 500
+            return (
+                jsonify(
+                    {
+                        "status": "failed",
+                        "message": "Unexpected optimization_result type.",
+                    }
+                ),
+                500,
+            )
 
-    except ValueError as ve: 
-        return jsonify({"status": "failed", "message": f"잘못된 요청: {ve}"}), 400
-    except Exception as e: 
+    except ValueError as ve:
+        return jsonify({"status": "failed", "message": f"Invalid request: {ve}"}), 400
+    except Exception as e:
         error_details = traceback.format_exc()
-        print(f"   Internal server error during /optimize handling:\n{error_details}")
-        return jsonify({"status": "failed", "message": f"서버 내부 오류 발생: {e}"}), 500
+        print(f"[ERROR] Internal server error during /optimize:\n{error_details}")
+        return (
+            jsonify(
+                {
+                    "status": "failed",
+                    "message": f"Internal server error during optimization: {e}",
+                }
+            ),
+            500,
+        )
 
-# --- 서버 실행 ---
-if __name__ == '__main__':
-    # Flask 서버는 app.py가 실행된 환경에 따라 OCI DB와 Kakao API 키를 사용합니다.
+
+# Alias endpoint (if frontend calls /api/optimize)
+app.add_url_rule(
+    "/api/optimize",
+    endpoint="optimize_api",
+    view_func=handle_optimization_request,
+    methods=["POST"],
+)
+
+
+# --------------------------------------------------------------------------
+# Dashboard data APIs
+# --------------------------------------------------------------------------
+
+@app.route("/api/dashboard", methods=["GET"])
+def api_get_dashboard():
+    try:
+        data = get_dashboard_data()
+        return jsonify(data), 200
+    except Exception as e:
+        print(f"[ERROR] /api/dashboard failed: {e}")
+        return jsonify({"error": "Failed to load dashboard data"}), 500
+
+
+@app.route("/api/dashboard/weekly-co2", methods=["GET"])
+def api_dashboard_weekly_co2():
+    try:
+        from_date, to_date = _extract_date_range_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    vehicle_id = _clean_optional_param(request.args.get("vehicleId"))
+    sector_id = _clean_optional_param(request.args.get("sectorId"))
+
+    try:
+        data = get_weekly_co2_trend(from_date, to_date, vehicle_id, sector_id)
+        return jsonify(data), 200
+    except Exception as e:
+        print(f"[ERROR] /api/dashboard/weekly-co2 failed: {e}")
+        return jsonify({"error": "Failed to load weekly CO2 data"}), 500
+
+
+@app.route("/api/dashboard/vehicle-distance", methods=["GET"])
+def api_dashboard_vehicle_distance():
+    try:
+        from_date, to_date = _extract_date_range_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    vehicle_id = _clean_optional_param(request.args.get("vehicleId"))
+    sector_id = _clean_optional_param(request.args.get("sectorId"))
+
+    try:
+        data = get_vehicle_distance_stats(from_date, to_date, vehicle_id, sector_id)
+        return jsonify(data), 200
+    except Exception as e:
+        print(f"[ERROR] /api/dashboard/vehicle-distance failed: {e}")
+        return jsonify({"error": "Failed to load vehicle distance data"}), 500
+
+
+# --------------------------------------------------------------------------
+# Main entry
+# --------------------------------------------------------------------------
+if __name__ == "__main__":
     print("\nStarting Flask server...")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host="0.0.0.0", port=5000)
