@@ -225,31 +225,34 @@ def _ensure_route_distance_fields(optimization_result: dict) -> dict:
         route_entry["total_distance"] = route_entry["total_distance_km"]
     return optimization_result
 
-
-@llm_bp.route('/api/save-plan-and-analyze', methods=['POST'])
+#-------------------------------------------------------------------------- 변경부분
+@llm_bp.route('/api/save-plan-and-analyze', methods=['POST', 'OPTIONS'])
 def save_plan_and_analyze():
+    all_run_results = []
     if request.method == 'OPTIONS':
         return jsonify(success=True)
-    """
-    파싱된 계획 데이터(JSON)를 받아 DB에 저장합니다.
-    """
+    
     plan_data = request.json
     if not plan_data:
         return jsonify({"error": "계획 데이터(JSON)가 필요합니다."}), 400
-    
-    # ⭐ [수정] 모든 Run의 결과를 담을 리스트
-    all_run_results = []
-    
-    # 공통 차량 ID (루프 밖에서 한 번만 가져옴)
+
+    print(f"[DEBUG] Received Plan Data: {plan_data}") # 디버깅용 로그 추가
+
+    # vehicles가 없으면 빈 리스트로 처리 (에러 X)
     vehicle_ids = plan_data.get('vehicles', [])
     if not vehicle_ids:
-        print("⚠️ JSON에 'vehicles' 정보가 없거나 비어있습니다. DB의 모든 차량을 대상으로 최적화를 시도합니다.")
-        vehicle_ids = [] # 3단계에서 수정한 폴백 로직이 db_handler에 있으므로 [] 전달
-    
+        print("[WARN] 'vehicles' 정보가 없습니다. DB의 모든 차량을 사용합니다.")
+        vehicle_ids = [] 
+
     runs_data = plan_data.get('runs', [])
     if not runs_data:
-        return jsonify({"error": "JSON에 'runs' 데이터가 없습니다."}), 400
-    
+        # runs가 없으면 plan_data 자체가 하나의 run일 수 있음 (구조 호환성)
+        if 'jobs' in plan_data:
+            print("[INFO] 단일 Run 구조로 감지됨. 리스트로 변환합니다.")
+            runs_data = [plan_data]
+        else:
+            return jsonify({"error": "JSON에 'runs' 또는 'jobs' 데이터가 없습니다."}), 400
+#-------------------------------------------------------------------------- 
     for i, run_item in enumerate(runs_data):
         conn = None
         run_id = f"RUN_{datetime.now().strftime('%Y%m%d_%H%M')}_{i}"
