@@ -1,6 +1,10 @@
 # Eco Logistics Optimizer
 
+<<<<<<< HEAD
 LLM을 활용한 친환경 물류 경로 최적화 시스템입니다. LLM이 생성한 JSON 계획을 가공하여 최적화 엔진을 실행하고, 결과를 DB에 저장한 뒤 XAI 설명을 제공합니다.
+=======
+LLM을 활용한 친환경 물류 경로 최적화 시스템의 웹 프론트엔드 프로토타입입니다.
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 
 ## 🚀 기능 개요
 
@@ -19,7 +23,10 @@ LLM을 활용한 친환경 물류 경로 최적화 시스템입니다. LLM이 �
 
 ## 🛠️ 기술 스택
 
+<<<<<<< HEAD
 ### Frontend
+=======
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 - **Framework**: Next.js 13 (App Router)
 - **Language**: TypeScript
 - **Styling**: TailwindCSS + shadcn/ui
@@ -27,6 +34,7 @@ LLM을 활용한 친환경 물류 경로 최적화 시스템입니다. LLM이 �
 - **차트**: Recharts
 - **아이콘**: Lucide React
 
+<<<<<<< HEAD
 ### Backend
 - **Framework**: Flask
 - **Language**: Python
@@ -61,10 +69,30 @@ pip install -r requirements.txt
 # 개발 서버 실행 (http://localhost:5000)
 python app.py
 ```
+=======
+## 📦 설치 및 실행
+
+```bash
+# 의존성 설치
+npm install
+
+# 개발 서버 실행
+npm run dev
+
+# 빌드
+npm run build
+
+# 프로덕션 실행
+npm start
+```
+
+개발 서버는 [http://localhost:3000](http://localhost:3000)에서 실행됩니다.
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 
 ## 📁 프로젝트 구조
 
 ```
+<<<<<<< HEAD
 Eco Logistics Optimizer/
 ├── frontend/                 # Next.js 프론트엔드 소스 코드
 │   ├── app/                  # Next.js App Router 페이지
@@ -101,6 +129,24 @@ Eco Logistics Optimizer/
 │   └── oracle_dml_its_weather_seed.sql # ITS/날씨 샘플 DML
 └── .gitignore                # Git 무시 파일 (루트)
 └── README.md                 # 프로젝트 설명서 (현재 파일)
+=======
+├── app/                    # Next.js App Router 페이지
+│   ├── plan/              # 경로 계획 페이지
+│   ├── routes/            # 경로 결과 페이지  
+│   ├── dashboard/         # 대시보드 페이지
+│   └── admin/             # 데이터 관리 페이지
+├── components/            # 재사용 가능한 컴포넌트
+│   ├── ui/               # shadcn/ui 컴포넌트
+│   ├── layout/           # 레이아웃 컴포넌트
+│   ├── plan/             # 계획 관련 컴포넌트
+│   └── admin/            # 관리 관련 컴포넌트
+├── lib/                   # 유틸리티 및 설정
+│   ├── types.ts          # TypeScript 타입 정의
+│   ├── store.ts          # Zustand 상태 관리
+│   ├── mock-data.ts      # 더미 데이터
+│   └── utils.ts          # 공통 유틸리티
+└── hooks/                 # 커스텀 훅
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 ```
 
 ## 🎯 현재 구현 상태
@@ -115,8 +161,11 @@ Eco Logistics Optimizer/
 - [x] 더미 데이터 기반 완전 시연 환경
 - [x] TypeScript 타입 안정성
 - [x] 접근성 고려 (aria-label, 키보드 네비게이션)
+<<<<<<< HEAD
  - [x] LLMpart JSON 어댑터 연결(백엔드)
  - [x] 최적화(MVP) → DB 저장(ASSIGNMENTS/RUN_SUMMARY) → XAI(MVP) 흐름 연결
+=======
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 
 ### 🚧 향후 개발 예정
 - [ ] 실제 LLM API 연동
@@ -152,7 +201,11 @@ Eco Logistics Optimizer/
 - **Route**: 경로 정보 (차량, 스텝, 거리, CO₂, 소요시간)
 
 ## 🔧 환경 설정
+<<<<<<< HEAD
 ### Frontend
+=======
+
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 현재는 프론트엔드 목업으로 구현되어 있으며, 모든 데이터는 더미 데이터를 사용합니다.
 실제 API 연결 시 다음 환경변수가 필요합니다:
 
@@ -161,6 +214,7 @@ NEXT_PUBLIC_KAKAO_MAP_API_KEY=your_kakao_map_api_key
 NEXT_PUBLIC_LLM_API_ENDPOINT=your_llm_api_endpoint
 NEXT_PUBLIC_OPTIMIZATION_API_ENDPOINT=your_optimization_api_endpoint
 ```
+<<<<<<< HEAD
 ### Backend
 백엔드 실행 시 backend 폴더에 .env 파일을 생성하고 다음 환경변수가 필요합니다:
 
@@ -180,6 +234,8 @@ REST_API_KEY=""
 - feat: 최적화/XAI 모듈 추가(`services/optimizer.py`, `services/xai.py`)
 - feat: DB 헬퍼 확장(ASSIGNMENTS/RUN_SUMMARY 저장, SETTINGS 조회)
 - feat: `app.py`에 LLMpart JSON → 저장 → 최적화 → XAI 흐름 연결
+=======
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
 
 ## 🤝 기여하기
 
@@ -192,3 +248,10 @@ REST_API_KEY=""
 ## 📄 라이선스
 
 이 프로젝트는 MIT 라이선스 하에 있습니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
+<<<<<<< HEAD
+=======
+
+---
+
+**참고**: 현재는 프론트엔드 목업 상태이며, 실제 API 연결은 향후 개발 예정입니다.
+>>>>>>> ef6645b0e299b0115c806f3a8a5ee45ebf7d46dd
