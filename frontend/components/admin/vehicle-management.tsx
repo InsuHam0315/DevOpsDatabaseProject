@@ -141,8 +141,9 @@ export default function VehicleManagement() {
                 <Input
                   id="emission-factor"
                   type="number"
+                  step="0.01"
                   value={formData.ef_gpkm}
-                  onChange={(e) => setFormData(prev => ({ ...prev, ef_gpkm: parseInt(e.target.value) || 0 }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, ef_gpkm: parseFloat(e.target.value) || 0 }))}
                 />
               </div>
               
@@ -151,8 +152,9 @@ export default function VehicleManagement() {
                 <Input
                   id="idle-emission"
                   type="number"
+                  step="0.01"
                   value={formData.idle_gps}
-                  onChange={(e) => setFormData(prev => ({ ...prev, idle_gps: parseInt(e.target.value) || 0 }))}
+                  onChange={(e) => setFormData(prev => ({ ...prev, idle_gps: parseFloat(e.target.value) || 0 }))}
                 />
               </div>
               
