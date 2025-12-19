@@ -397,21 +397,25 @@ def get_weekly_co2_trend(from_date: dt.date, to_date: dt.date,
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        query = """
+        route_options = (
+            "CO2 Optimal Route",
+            "Our Eco Optimal Route",
+            "Kakao Route",
+            "ORS Route",
+            "Distance Optimal Route",
+        )
+        placeholders = ",".join(f":r{i}" for i in range(len(route_options)))
+        query = f"""
             SELECT TRUNC(r.run_date) AS run_day,
                    SUM(a.co2_g) AS total_co2_g
             FROM ASSIGNMENTS a
             JOIN RUNS r ON a.run_id = r.run_id
             LEFT JOIN JOBS j ON a.end_job_id = j.job_id
             WHERE r.run_date BETWEEN :from_date AND :to_date
-              AND a.route_option_name IN (:route_option, :route_option_legacy)
+              AND a.route_option_name IN ({placeholders})
         """
-        params = {
-            "from_date": from_date,
-            "to_date": to_date,
-            "route_option": "CO2 Optimal Route",
-            "route_option_legacy": "Our Eco Optimal Route"
-        }
+        params = {"from_date": from_date, "to_date": to_date}
+        params.update({f"r{i}": name for i, name in enumerate(route_options)})
         if vehicle_id:
             query += " AND a.vehicle_id = :vehicle_id"
             params["vehicle_id"] = vehicle_id
@@ -447,21 +451,25 @@ def get_vehicle_distance_stats(from_date: dt.date, to_date: dt.date,
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        query = """
+        route_options = (
+            "CO2 Optimal Route",
+            "Our Eco Optimal Route",
+            "Kakao Route",
+            "ORS Route",
+            "Distance Optimal Route",
+        )
+        placeholders = ",".join(f":r{i}" for i in range(len(route_options)))
+        query = f"""
             SELECT a.vehicle_id,
                    SUM(a.distance_km) AS total_distance_km
             FROM ASSIGNMENTS a
             JOIN RUNS r ON a.run_id = r.run_id
             LEFT JOIN JOBS j ON a.end_job_id = j.job_id
             WHERE r.run_date BETWEEN :from_date AND :to_date
-              AND a.route_option_name IN (:route_option, :route_option_legacy)
+              AND a.route_option_name IN ({placeholders})
         """
-        params = {
-            "from_date": from_date,
-            "to_date": to_date,
-            "route_option": "CO2 Optimal Route",
-            "route_option_legacy": "Our Eco Optimal Route"
-        }
+        params = {"from_date": from_date, "to_date": to_date}
+        params.update({f"r{i}": name for i, name in enumerate(route_options)})
         if vehicle_id:
             query += " AND a.vehicle_id = :vehicle_id"
             params["vehicle_id"] = vehicle_id
