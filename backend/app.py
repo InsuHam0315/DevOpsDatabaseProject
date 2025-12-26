@@ -4,6 +4,27 @@ import traceback
 import sys
 from datetime import datetime, date
 
+#-------------------------------------------------------------------------- 변경부분
+import oracledb
+import config
+
+def get_db_connection():
+    """Oracle DB 연결 객체를 생성하고 반환합니다."""
+    try:
+        conn = oracledb.connect(
+            user=config.DB_USER,
+            password=config.DB_PASSWORD,
+            dsn=config.DB_DSN,
+            config_dir=config.OCI_WALLET_DIR,
+            wallet_location=config.OCI_WALLET_DIR,
+            wallet_password=config.OCI_WALLET_PASSWORD
+        )
+        return conn
+    except Exception as e:
+        # 연결 실패 시 ConnectionError를 발생시켜 상위 로직에서 처리하도록 합니다.
+        raise ConnectionError(f"DB 연결 실패: {e}")
+#--------------------------------------------------------------------------
+
 # --------------------------------------------------------------------------
 # [Optional] LLM Blueprint loading
 # --------------------------------------------------------------------------
@@ -281,6 +302,168 @@ def api_dashboard_vehicle_distance():
     except Exception as e:
         print(f"[ERROR] /api/dashboard/vehicle-distance failed: {e}")
         return jsonify({"error": "Failed to load vehicle distance data"}), 500
+
+
+#-------------------------------------------------------------------------- 변경부분
+
+# 날짜(datetime) 타입을 문자열로 변환하기 위한 함수 (JSON 직렬화 오류 방지)
+def format_row(cursor, row):
+    columns = [col[0].lower() for col in cursor.description] # 컬럼명을 소문자로
+    data = {}
+    for col, val in zip(columns, row):
+        # 날짜/시간 타입이면 문자열로 변환
+        if val is not None and hasattr(val, 'isoformat'):
+            data[col] = val.isoformat()
+        else:
+            data[col] = val
+    return data
+
+# 1. 차량 목록 조회 API
+@app.route('/api/vehicles', methods=['GET'])
+def get_vehicles():
+    try:
+        conn = get_db_connection() # DB 연결 (본인 코드에 맞는 함수명 사용)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM VEHICLES")
+        rows = cursor.fetchall()
+        
+        # 데이터를 JSON 리스트로 변환
+        result = [format_row(cursor, row) for row in rows]
+        
+        cursor.close()
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 2. 섹터 목록 조회 API
+@app.route('/api/sectors', methods=['GET'])
+def get_sectors():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # 주의: 테이블명이 SECTOR 인지 SECTORS 인지 확인 필요!
+        cursor.execute("SELECT * FROM SECTORS") 
+        rows = cursor.fetchall()
+        
+        result = [format_row(cursor, row) for row in rows]
+        
+        cursor.close()
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 3. 작업(Jobs) 목록 조회 API
+@app.route('/api/jobs', methods=['GET'])
+def get_jobs_list():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # 필요한 컬럼만 가져오거나 전체(*) 가져오기
+        cursor.execute("SELECT * FROM JOBS ORDER BY JOB_ID DESC")
+        rows = cursor.fetchall()
+        
+        result = [format_row(cursor, row) for row in rows]
+        
+        cursor.close()
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/vehicles/add', methods=['POST'])
+def add_vehicle():
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. FACTOR_ID 컬럼 추가 (필수값)
+        sql = """
+            INSERT INTO VEHICLES (VEHICLE_ID, VEHICLE_TYPE, MODEL_NAME, CAPACITY_KG, FACTOR_ID)
+            VALUES (:1, :2, :3, :4, :5)
+        """
+        
+        # 2. FACTOR_ID 값으로 숫자 1을 강제로 넣어줍니다.
+        # (만약 프론트엔드에서 입력받지 않는다면 기본값을 이렇게 지정해야 합니다)
+        factor_id = 1 
+        
+        cursor.execute(sql, (
+            data['vehicle_id'], 
+            data['vehicle_type'], 
+            data['model_name'], 
+            int(data['capacity_kg']), # 숫자로 변환
+            factor_id
+        ))
+        
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "차량 추가 성공"}), 201
+        
+    except Exception as e:
+        print(f"차량 추가 에러: {e}") # 터미널에서 에러 확인용
+        return jsonify({"error": str(e)}), 500
+
+# 2. 구역 추가 API
+@app.route('/api/sectors/add', methods=['POST'])
+def add_sectors():
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        sql = "INSERT INTO SECTORS (SECTOR_NAME, LAT, LON) VALUES (:1, :2, :3)"
+        cursor.execute(sql, (data['sector_name'], data['lat'], data['lon']))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "구역 추가 성공"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 3. 작업 추가 API
+# app.py 의 add_job 함수를 이걸로 교체하세요
+
+@app.route('/api/jobs/add', methods=['POST'])
+def add_job():
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. SQL 수정: RUN_ID 컬럼 추가
+        # (SECTOR_ID도 혹시 필수라면 추가해야 할 수 있지만, 일단 RUN_ID부터 해결!)
+        sql = """
+            INSERT INTO JOBS (JOB_ID, ADDRESS, DEMAND_KG, TW_START, TW_END, RUN_ID)
+            VALUES (:1, :2, :3, TO_DATE(:4, 'YYYY-MM-DD HH24:MI'), TO_DATE(:5, 'YYYY-MM-DD HH24:MI'), :6)
+        """
+        
+        # 2. 수동 입력이므로 RUN_ID에 'MANUAL' 같은 임시 값을 넣어줍니다.
+        default_run_id = "MANUAL"
+        
+        cursor.execute(sql, (
+            data['job_id'], 
+            data['address'], 
+            data['demand_kg'], 
+            data['tw_start'], # 프론트에서 "2025-12-20 09:00" 형태로 보내줌
+            data['tw_end'],
+            default_run_id    # RUN_ID 채우기
+        ))
+        conn.commit()
+        
+        cursor.close()
+        conn.close()
+        return jsonify({"message": "작업 추가 성공"}), 201
+    except Exception as e:
+        print(f"작업 추가 에러: {e}")
+        return jsonify({"error": str(e)}), 500
+
+#-------------------------------------------------------------------------- 
+
 
 
 # --------------------------------------------------------------------------

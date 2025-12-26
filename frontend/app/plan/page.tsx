@@ -15,7 +15,7 @@ import { toast } from 'sonner'; //LLM 결과표출 추가로 인한 수정
 
 // 💡 백엔드 API 기본 URL (natural-language-input.tsx와 동일하게 사용)
 // 기본값을 로컬호스트 대신 개발 서버 네트워크 IP로 설정하여 다른 디바이스에서 접근 가능하게 함
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://203.234.62.83:5000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:5000';
 
 export default function PlanPage() {
   const router = useRouter();
@@ -33,7 +33,7 @@ export default function PlanPage() {
   };
 
   // 💡 API 호출 함수 (폼 입력에서도 사용 가능하도록 수정)
-  const handleOptimize = async (request: any | null) => { 
+  const handleOptimize = async (request: any | null) => {
     if (!request) {
       setSubmitError('파싱된 요청이 없습니다.');
       return;
@@ -54,7 +54,7 @@ export default function PlanPage() {
         // request는 ParsedResult 구조(백엔드에서 기대하는 runs 포함)입니다.
         body: JSON.stringify(request),
       });
-//------------------------------------------------------------------------------------- LLM 결과표출 추가로 인한 수정
+      //------------------------------------------------------------------------------------- LLM 결과표출 추가로 인한 수정
       if (response.ok) {
         // 성공 시
         const data: { message: string; batch_results: BatchResult[] } = await response.json();
@@ -86,38 +86,38 @@ export default function PlanPage() {
       setIsOptimizing(false); // ⬅️ [수정] isSubmitting 대신 isOptimizing 사용
     }
   };
-//-------------------------------------------------------------------------------------
+  //-------------------------------------------------------------------------------------
   return (
     <div className="container mx-auto py-8 space-y-8">
       {/* ... (Header는 동일) ... */}
-       <div className="text-center space-y-4">
-         <div className="flex items-center justify-center gap-3">
-           <MapPin className="w-8 h-8 text-green-600" />
-           <h1 className="text-3xl font-bold">경로 계획</h1>
-         </div>
-         <p className="text-muted-foreground max-w-2xl mx-auto">
-           자연어로 배송 요구사항을 입력하거나 상세 폼을 통해 경로 최적화를 설정하세요.
-           LLM이 여러분의 요구사항을 이해하고 최적의 친환경 경로를 제안합니다.
-         </p>
-       </div>
+      <div className="text-center space-y-4">
+        <div className="flex items-center justify-center gap-3">
+          <MapPin className="w-8 h-8 text-green-600" />
+          <h1 className="text-3xl font-bold">경로 계획</h1>
+        </div>
+        <p className="text-muted-foreground max-w-2xl mx-auto">
+          자연어로 배송 요구사항을 입력하거나 상세 폼을 통해 경로 최적화를 설정하세요.
+          LLM이 여러분의 요구사항을 이해하고 최적의 친환경 경로를 제안합니다.
+        </p>
+      </div>
 
       <Card>
         {/* ... (CardHeader, TabsList는 동일) ... */}
-         <CardHeader>
-           <CardTitle className="text-xl">배송 계획 입력</CardTitle>
-         </CardHeader>
-         <CardContent>
-           <Tabs defaultValue="natural" className="w-full">
-             <TabsList className="grid w-full grid-cols-2">
-               <TabsTrigger value="natural" className="flex items-center gap-2">
-                 <MessageSquare className="w-4 h-4" />
-                 자연어 입력
-               </TabsTrigger>
-               <TabsTrigger value="form" className="flex items-center gap-2">
-                 <FileText className="w-4 h-4" />
-                 폼 입력
-               </TabsTrigger>
-             </TabsList>
+        <CardHeader>
+          <CardTitle className="text-xl">배송 계획 입력</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="natural" className="w-full">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="natural" className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                자연어 입력
+              </TabsTrigger>
+              <TabsTrigger value="form" className="flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                폼 입력
+              </TabsTrigger>
+            </TabsList>
 
             <TabsContent value="natural" className="mt-6">
               {/* 💡 onParsed 핸들러 전달 */}
@@ -142,8 +142,8 @@ export default function PlanPage() {
                     >
                       {isOptimizing ? (
                         <>
-                           <div className="w-4 h-4 border-2 border-current border-t-transparent animate-spin rounded-full" />
-                           <span>처리 중...</span>
+                          <div className="w-4 h-4 border-2 border-current border-t-transparent animate-spin rounded-full" />
+                          <span>처리 중...</span>
                         </>
                       ) : (
                         "최적화 실행" // 💡 버튼 텍스트 변경
